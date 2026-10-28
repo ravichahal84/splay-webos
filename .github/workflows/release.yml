@@ -18,7 +18,7 @@ jobs:
           npm install --global @webos-tools/cli
           mkdir -p dist
           ares-package -o dist app
-          python3 scripts/prepare_release.py --ipk dist/*.ipk --repo "${{ github.repository }}" --tag "${{ github.ref_name }}"
+          python3 scripts/prepare_release.py --ipk dist/*.ipk --repo "${{ github.repository }}"
       - uses: actions/upload-artifact@v4
         with:
           name: splay-webos-build
