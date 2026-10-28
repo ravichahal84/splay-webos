@@ -1,49 +1,28 @@
-# splay-webos
-Stremo auto play
+# Splay for webOS
 
-## Alder-inspired LG webOS developer preview
+An early Splay webOS launcher for a compatible self-hosted media server. It stores one server URL locally on each TV and opens it in the webOS browser context.
 
-This is the GitHub home for a **prototype** Stremio-compatible TV application. It is based on an independent webOS implementation informed by the Alder Android project (https://github.com/aradhyas8/Alder); Android Kotlin/ExoPlayer code cannot run directly on webOS.
+## Target TVs
 
-**Status:** The full application files still need importing from the prepared project ZIP. The repository is not an installable Homebrew source yet. The prototype has not been verified on physical TVs.
-
-### Target TVs
 - LG 65UR81006LJ (webOS 23 generation)
 - LG 55UA8450PSA (webOS 25 generation)
 
-### Import source
+## Local build and install
 
-Extract the supplied `Splay_webOS_GitHub_Homebrew_Ready.zip` into the root of this repository, preserving these paths:
-
-```
-app/
-scripts/prepare_release.py
-tests/api.test.js
-.github/workflows/release.yml
-homebrew-repository.json
-LICENSE
-DEVELOPMENT.md
-build.py
+```sh
+node tests/api.test.js
+node --check app/api.js && node --check app/app.js
+ares-package -o dist app
+ares-install --device <tv-name> dist/org.community.alder.webos_0.1.0_all.ipk
+ares-launch --device <tv-name> org.community.alder.webos
 ```
 
-The ZIP's README contains detailed build and testing notes; keep this README or reconcile the two. Run `node tests/api.test.js` and `node --check app/app.js && node --check app/api.js` before publishing.
+`org.community.alder.webos` is retained for upgrade compatibility. This is a clean webOS implementation, not a direct APK conversion; native playback and server compatibility must be tested on each TV.
 
-### GitHub Actions and Homebrew
+## Homebrew distribution
 
-The supplied GitHub Actions workflow uses LG's `@webos-tools/cli` to build an official `.ipk`, then produces a Homebrew manifest. On a **tagged** commit such as `v0.1.0` it publishes a versioned GitHub Release. The application ID `org.community.alder.webos` remains unchanged for upgrade compatibility.
+The Homebrew catalogue and release assets need public, unauthenticated URLs. This repository is intentionally private, so its raw GitHub URLs and private release assets will not work as a Homebrew source. No tag or release has been made.
 
-After publishing a *publicly accessible* release, the Homebrew Channel external repository URL is:
+## Provenance and licence
 
-```text
-https://raw.githubusercontent.com/ravichahal84/splay-webos/main/homebrew-repository.json
-```
-
-**Important:** This repository was verified as **private**. The normal Homebrew Channel cannot download the raw catalogue or release assets without authentication; make the repository public only if you choose to expose the project and have checked it for secrets. Do not put Stremio keys, TV SSH credentials, personal data or IP addresses into the source.
-
-### Feature limits
-
-The prototype is intended to support account linking, add-on catalogues, episode browsing, remote controls and native webOS playback of compatible HTTPS streams. Authentication, CORS, playback support and updates have **not been confirmed on either LG TV**. Android ExoPlayer, FFmpeg, torrents, transcoding and other Android-specific features are not implemented.
-
-Original project: https://github.com/aradhyas8/Alder
-
-License for contributed port code: GPL-3.0 (see supplied LICENSE).
+The project was prepared alongside the upstream [Alder](https://github.com/aradhyas8/Alder) source. The upstream GPL-3.0 licence is retained in `LICENSE`; check licence obligations before porting Alder features.
