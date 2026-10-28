@@ -1,0 +1,17 @@
+name: Validate webOS app
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node tests/api.test.js
+      - run: node --check app/api.js && node --check app/app.js
+      - run: |
+          npm install --global @webos-tools/cli
+          ares-package -c app
