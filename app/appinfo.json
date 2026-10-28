@@ -1,0 +1,14 @@
+{
+  "id": "org.community.alder.webos",
+  "version": "0.1.0",
+  "vendor": "Splay",
+  "type": "web",
+  "main": "index.html",
+  "title": "Splay",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "bgColor": "#0d1117",
+  "disableBackHistoryAPI": true,
+  "requiredPermissions": ["internet"],
+  "supportsMultipleWindows": false
+}
