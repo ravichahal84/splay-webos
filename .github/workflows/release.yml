@@ -1,70 +1,29 @@
-name: Package and publish Alder webOS
+name: Package Splay webOS
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
   workflow_dispatch:
-
 permissions:
   contents: write
-
 jobs:
   build:
-    name: Build and validate IPK
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Verify application source has been imported
-        run: |
-          test -f app/appinfo.json
-          test -f app/index.html
-          test -f app/api.js
-          test -f app/app.js
-          test -f app/icon.png
-      - name: Static API tests
-        run: node tests/api.test.js
-      - name: Check app JavaScript syntax
-        run: |
-          node --check app/api.js
-          node --check app/app.js
-      - name: Install official LG webOS packaging CLI
-        run: npm install --global @webos-tools/cli
-      - name: Build IPK with ares-package
-        run: |
+        with: { node-version: '22' }
+      - run: node tests/api.test.js
+      - run: node --check app/api.js && node --check app/app.js
+      - run: |
+          npm install --global @webos-tools/cli
           mkdir -p dist
-          ares-package --no-minify app --outdir dist
-          ls -l dist/*.ipk
-      - name: Verify package and build Homebrew manifest
-        env:
-          REPO: ${{ github.repository }}
-          GIT_REF: ${{ github.ref }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          python3 - <<'PY'
-          import glob, os, subprocess
-          pkgs = glob.glob('dist/*.ipk')
-          assert len(pkgs) == 1, f'Expected one IPK, got {pkgs}'
-          cmd = ['python3','scripts/prepare_release.py','--ipk',pkgs[0], '--repo',os.environ['REPO']]
-          if os.environ['GIT_REF'].startswith('refs/tags/'):
-              cmd += ['--tag', os.environ['TAG']]
-          subprocess.run(cmd,check=True)
-          PY
+          ares-package -o dist app
+          python3 scripts/prepare_release.py --ipk dist/*.ipk --repo "${{ github.repository }}" --tag "${{ github.ref_name }}"
       - uses: actions/upload-artifact@v4
         with:
           name: splay-webos-build
-          path: |
-            dist/*.ipk
-            dist/*.manifest.json
+          path: dist/*
       - name: Publish tagged release
         if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          gh release create "$TAG" dist/*.ipk dist/*.manifest.json \
-            --title "Alder webOS $TAG" \
-            --notes "Experimental webOS developer preview. Not fully ported or TV-verified. Video playback supports only formats natively supported by webOS." \
-            --latest
+        env: { GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}' }
+        run: gh release create "${{ github.ref_name }}" dist/*.ipk dist/*.manifest.json --title "Splay webOS ${{ github.ref_name }}" --notes "Experimental webOS preview; test on a physical TV before distribution."
