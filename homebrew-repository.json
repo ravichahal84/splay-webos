@@ -1,0 +1,17 @@
+{
+  "packages": [
+    {
+      "id": "org.community.alder.webos",
+      "title": "Alder webOS (Preview)",
+      "iconUri": "https://raw.githubusercontent.com/ravichahal84/splay-webos/main/app/largeIcon.png",
+      "manifestUrl": "https://github.com/ravichahal84/splay-webos/releases/latest/download/org.community.alder.webos.manifest.json",
+      "shortDescription": "Experimental Stremio-compatible LG webOS TV client. HTTPS direct-play only."
+    }
+  ],
+  "paging": {
+    "page": 1,
+    "count": 1,
+    "maxPage": 1,
+    "itemsTotal": 1
+  }
+}
