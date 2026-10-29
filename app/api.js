@@ -1,14 +1,1 @@
-/* Shared URL validation for the Splay webOS client. */
-(function (global) {
-  'use strict';
-  function normalizeServerUrl(value) {
-    var url = new URL(String(value || '').trim());
-    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-      throw new Error('Use an http or https server address.');
-    }
-    return url.href.replace(/\/$/, '');
-  }
-  var api = { normalizeServerUrl: normalizeServerUrl };
-  if (typeof module !== 'undefined') module.exports = api;
-  global.SplayApi = api;
-})(typeof window === 'undefined' ? globalThis : window);
+(function(g){'use strict';const API='https://api.strem.io/api/',LINK='https://link.stremio.com/api/v2/';async function get(u,o){const r=await fetch(u,o);const j=await r.json();if(!r.ok||j.error)throw Error((j.error&&j.error.message)||`Request failed (${r.status})`);return j.result||j}async function core(m,b){return get(API+m,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})}function url(a,r,t,id,x){return `${a.transportUrl.replace(/\/$/,'')}/${[r,t,id].filter(Boolean).map(encodeURIComponent).join('/')}.json${x?'?'+x:''}`}const a={async createLink(){const v=await get(LINK+'create?type=Create');return{code:v.code,url:v.link}},async readLink(c){try{return(await get(LINK+'read?type=Read&code='+encodeURIComponent(c))).authKey||null}catch(e){if(/101/.test(e.message))return null;throw e}},async addons(k){return(await core('addonCollectionGet',{type:'AddonCollectionGet',authKey:k,update:true})).addons||[]},async catalog(a,t,id,x){return(await get(url(a,'catalog',t,id,x))).metas||[]},async streams(a,t,id){return(await get(url(a,'stream',t,id))).streams||[]},image(x){return x?(x.startsWith('http')?x:`https://images.metahub.space/poster/medium/${encodeURIComponent(x)}/img`):''}};if(typeof module!=='undefined')module.exports=a;g.SplayApi=a})(typeof window==='undefined'?globalThis:window);
