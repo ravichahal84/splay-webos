@@ -1,15 +1,15 @@
 {
   "id": "org.community.alder.webos",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "type": "web",
   "title": "Splay",
   "appDescription": "Experimental Stremio client for webOS. Playback compatibility varies by TV and add-on.",
   "iconUri": "https://raw.githubusercontent.com/ravichahal84/splay-webos/main/app/largeIcon.png",
   "sourceUrl": "https://github.com/ravichahal84/splay-webos",
   "rootRequired": false,
-  "ipkUrl": "https://raw.githubusercontent.com/ravichahal84/splay-webos/main/homebrew/org.community.alder.webos_0.1.0_all.ipk",
+  "ipkUrl": "https://raw.githubusercontent.com/ravichahal84/splay-webos/main/homebrew/org.community.alder.webos_0.2.1_all.ipk",
   "ipkHash": {
-    "sha256": "4e20dae8a481a837d70c9c8e52f03617dcda0b22f64979f4adfa102ac253d827"
+    "sha256": "8f00756c2a8f805b7017071fbc3225245221d29d1cb0817ce4dd1c9b6920f69b"
   },
-  "ipkSize": 7240
+  "ipkSize": 10074
 }
