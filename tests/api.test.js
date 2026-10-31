@@ -5,6 +5,8 @@ assert.equal(typeof api.createLink, 'function');
 assert.equal(typeof api.catalog, 'function');
 assert.equal(typeof api.streams, 'function');
 assert.equal(typeof api.rankStreams, 'function');
+assert.equal(api.isHttpUrl('javascript:alert(1)'), false);
+assert.equal(api.isHttpUrl('https://example.test/video.mp4'), true);
 const ranked = api.rankStreams([
   { url: 'https://example.invalid/cam.mp4', name: 'CAM 1080p' },
   { url: 'https://example.invalid/4k.mp4', name: 'Movie 2160p HDR HEVC' },

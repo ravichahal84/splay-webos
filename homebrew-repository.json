@@ -2,10 +2,10 @@
   "packages": [
     {
       "id": "org.community.alder.webos",
-      "title": "Splay for webOS (Preview)",
+      "title": "Splay for webOS",
       "iconUri": "https://raw.githubusercontent.com/ravichahal84/splay-webos/main/app/largeIcon.png",
       "manifestUrl": "https://raw.githubusercontent.com/ravichahal84/splay-webos/main/homebrew/org.community.alder.webos.manifest.json",
-      "shortDescription": "Experimental Stremio client for webOS."
+      "shortDescription": "Stremio client for webOS with direct debrid playback."
     }
   ],
   "paging": {

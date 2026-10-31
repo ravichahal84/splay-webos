@@ -3,14 +3,32 @@
   const $ = (selector, root = document) => root.querySelector(selector);
   const app = $('#app'), nav = $('nav');
   let auth = localStorage.getItem('splay.authKey'), addons = [], selected = null, selectedVideo = null;
+  const historyKey = 'splay.history';
+  const progressKey = id => 'splay.progress:' + String(id);
+  const readHistory = () => { try { const value = JSON.parse(localStorage.getItem(historyKey) || '[]'); return Array.isArray(value) ? value.slice(0, 8) : []; } catch (_) { return []; } };
+  const addToHistory = item => {
+    if (!item || !item.id || !item.name) return;
+    const entry = { id: item.id, type: item.type || 'movie', name: item.name, poster: item.poster || '', updatedAt: Date.now() };
+    localStorage.setItem(historyKey, JSON.stringify([entry, ...readHistory().filter(value => value.id !== entry.id)].slice(0, 8)));
+  };
+  const readProgress = id => Number(localStorage.getItem(progressKey(id)) || 0) || 0;
+  const saveProgress = (id, seconds) => { if (id && Number.isFinite(seconds)) localStorage.setItem(progressKey(id), String(Math.max(0, seconds))); };
   const prefs = () => Object.assign({ maxHeight: 2160, allowHdr: true, preferHdr: false, preferHevc: false, autoPlay: true }, JSON.parse(localStorage.getItem('splay.preferences') || '{}'));
   const savePrefs = value => localStorage.setItem('splay.preferences', JSON.stringify(value));
   const e = value => String(value || '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
-  const image = (meta, kind) => SplayApi.image(meta[kind] || (kind === 'poster' ? meta.poster || meta.imdb_id : meta.imdb_id), kind);
+  const image = (meta, kind) => SplayApi.normalizeUrl(SplayApi.image(meta[kind] || (kind === 'poster' ? meta.poster || meta.imdb_id : meta.imdb_id), kind));
   const show = html => { app.innerHTML = html; setTimeout(() => ($('button,input,select', app) || app).focus()); };
   const safe = async work => { try { $('#status').textContent = 'Loading…'; await work(); } catch (error) { app.insertAdjacentHTML('afterbegin', `<p class="error">${e(error.message)}</p>`); } finally { $('#status').textContent = ''; } };
   const typeFor = item => item.type === 'series' ? 'series' : 'movie';
   const directAddons = (type, id) => addons.filter(addon => SplayApi.supports(addon, 'stream', type, id));
+  const historyMarkup = () => {
+    const items = readHistory(); if (!items.length) return '';
+    return `<section><h2>Continue watching</h2><div id="history" class="cards"></div></section>`;
+  };
+  function showHistory() {
+    const box = $('#history'); if (!box) return;
+    cards(box, readHistory());
+  }
 
   function cards(box, items) {
     items.forEach(meta => {
@@ -36,7 +54,8 @@
     await safe(async () => {
       const result = await Promise.all(rows().map(async item => Object.assign({}, item, { metas: await SplayApi.catalog(item.addon, item.catalog.type, item.catalog.id).catch(() => []) })));
       const first = result.flatMap(item => item.metas)[0]; if (first) paintHero(first);
-      const box = $('#rows'); box.innerHTML = result.map((item, index) => `<section><h2>${e(item.catalog.name || item.catalog.id)} <small>${e(item.addon.manifest.name)}</small></h2><div class="cards" id="row-${index}"></div></section>`).join('');
+      const box = $('#rows'); box.innerHTML = historyMarkup() + result.map((item, index) => `<section><h2>${e(item.catalog.name || item.catalog.id)} <small>${e(item.addon.manifest.name)}</small></h2><div class="cards" id="row-${index}"></div></section>`).join('');
+      showHistory();
       result.forEach((item, index) => cards($(`#row-${index}`), item.metas));
     });
   }
@@ -97,9 +116,17 @@
   }
   function playQueue(queue, index) {
     const stream = queue[index], label = streamLabel(stream);
+    addToHistory(selectedVideo);
+    const resumeAt = readProgress(selectedVideo.id || selected.id);
     show(`<button class="back">← Back</button><h1>${e(selectedVideo.name || selected.name)}</h1><p id="playing">Starting ${e(label)}…</p><video id="player" controls autoplay src="${e(stream.url)}">This stream is not supported by the TV.</video><div id="player-actions"></div>`);
     $('.back').onclick = () => streams(selectedVideo, false);
     const player = $('#player');
+    let lastSaved = 0;
+    player.onloadedmetadata = () => { if (resumeAt > 0 && resumeAt < player.duration - 15) player.currentTime = resumeAt; };
+    player.ontimeupdate = () => {
+      if (player.currentTime - lastSaved >= 10) { lastSaved = player.currentTime; saveProgress(selectedVideo.id || selected.id, player.currentTime); }
+    };
+    player.onended = () => saveProgress(selectedVideo.id || selected.id, 0);
     player.onerror = () => { if (index + 1 < queue.length) { $('#playing').textContent = 'That format failed. Trying the next compatible source…'; playQueue(queue, index + 1); } else { $('#playing').textContent = 'None of the available direct sources played on this TV. Choose another source or adjust its format in Stremio.'; } };
     const actions = $('#player-actions');
     if (index + 1 < queue.length) { const next = document.createElement('button'); next.className = 'quiet'; next.textContent = 'Try next source'; next.onclick = () => playQueue(queue, index + 1); actions.append(next); }
