@@ -3,10 +3,15 @@
     {
       "id": "org.community.alder.webos",
       "title": "Splay for webOS (Preview)",
-      "iconUri": "REPLACE_WITH_PUBLIC_ICON_URL",
-      "manifestUrl": "REPLACE_WITH_PUBLIC_MANIFEST_URL",
-      "shortDescription": "Experimental Splay webOS media-server launcher."
+      "iconUri": "https://raw.githubusercontent.com/ravichahal84/splay-webos/main/app/largeIcon.png",
+      "manifestUrl": "https://raw.githubusercontent.com/ravichahal84/splay-webos/main/homebrew/org.community.alder.webos.manifest.json",
+      "shortDescription": "Experimental Stremio client for webOS."
     }
   ],
-  "paging": { "page": 1, "count": 1, "maxPage": 1, "itemsTotal": 1 }
+  "paging": {
+    "page": 1,
+    "count": 1,
+    "maxPage": 1,
+    "itemsTotal": 1
+  }
 }

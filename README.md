@@ -1,6 +1,6 @@
 # Splay for webOS
 
-An early Splay webOS launcher for a compatible self-hosted media server. It stores one server URL locally on each TV and opens it in the webOS browser context.
+An early, experimental webOS client for Stremio. It links a Stremio account with a one-time code, reads the account's add-ons and catalogues, and asks webOS to play returned streams. Stream playback depends on the add-on and format being compatible with the TV.
 
 ## Target TVs
 
@@ -21,7 +21,7 @@ ares-launch --device <tv-name> org.community.alder.webos
 
 ## Homebrew distribution
 
-The Homebrew catalogue and release assets need public, unauthenticated URLs. This repository is intentionally private, so its raw GitHub URLs and private release assets will not work as a Homebrew source. No tag or release has been made.
+The repository is public. The `homebrew-repository.json` file is the custom catalogue URL to add in Homebrew Channel. Its package manifest and IPK are hosted under `homebrew/` as public raw GitHub files. Version 0.1.0 is an experimental preview; playback and add-on compatibility have not yet been verified on the target TVs. Do not enter a Stremio password on the TV; account linking uses Stremio's one-time code flow.
 
 ## Provenance and licence
 
