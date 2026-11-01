@@ -135,8 +135,8 @@
       const seasons = [...new Set(videos.map(video => Number(video.season) || 0))].sort((a, b) => a - b);
       const currentVideo = videos.find(video => video.id === selectedVideo.id) || videos[0];
       selectedVideo = Object.assign({}, currentVideo, { type: 'series', poster: currentVideo.thumbnail || meta.poster, background: meta.background, name: currentVideo.title || meta.name });
-      box.innerHTML = `<h2>Episodes</h2><label class="season-picker">Season <select id="season">${seasons.map(season => `<option value="${season}">${season ? `Season ${season}` : 'Specials'}</option>`).join('')}</select></label><div class="episodes" id="episode-list"></div>`;
-      const seasonPicker = $('#season', box);
+      box.innerHTML = `<h2>Season</h2><div class="season-picker" role="group" aria-label="Choose a season">${seasons.map(season => `<button type="button" class="season${season === (Number(currentVideo.season) || 0) ? ' selected' : ''}" data-season="${season}">${season ? `Season ${season}` : 'Specials'}</button>`).join('')}</div><h2>Episodes</h2><div class="episodes" id="episode-list"></div>`;
+      const seasonButtons = $$('.season', box);
       const renderEpisodes = season => {
         const list = $('#episode-list', box), seasonVideos = videos.filter(video => (Number(video.season) || 0) === Number(season));
         list.innerHTML = '';
@@ -147,7 +147,7 @@
         seasonVideos.forEach(video => {
           const button = document.createElement('button');
           button.className = 'episode' + (video.id === selectedVideo.id ? ' selected' : '');
-          button.textContent = [video.episode && 'Episode ' + video.episode, video.title || video.name].filter(Boolean).join(' · ') || video.id;
+          button.textContent = [[video.season && 'S' + String(video.season).padStart(2, '0'), video.episode && 'E' + String(video.episode).padStart(2, '0')].filter(Boolean).join(''), video.title || video.name].filter(Boolean).join(' · ') || video.id;
           button.onclick = () => {
             selectedVideo = Object.assign({}, video, { type: 'series', poster: video.thumbnail || meta.poster, background: meta.background, name: video.title || meta.name });
             $$('.episode', list).forEach(value => value.classList.remove('selected'));
@@ -156,9 +156,13 @@
           list.append(button);
         });
       };
-      seasonPicker.value = String(Number(currentVideo.season) || 0);
-      seasonPicker.onchange = () => renderEpisodes(seasonPicker.value);
-      renderEpisodes(seasonPicker.value);
+      seasonButtons.forEach(button => {
+        button.onclick = () => {
+          seasonButtons.forEach(value => value.classList.toggle('selected', value === button));
+          renderEpisodes(button.dataset.season);
+        };
+      });
+      renderEpisodes(Number(currentVideo.season) || 0);
     }
     $('#best').onclick = () => streams(selectedVideo, true); $('#sources').onclick = () => streams(selectedVideo, false);
     if (playImmediately) streams(selectedVideo, true);
