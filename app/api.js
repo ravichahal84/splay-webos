@@ -13,7 +13,11 @@
     return url.replace(/\/manifest\.json(?:\?.*)?$/, '').replace(/\/$/, '');
   };
   const part = value => encodeURIComponent(value).replace(/%3A/gi, ':');
-  const addonUrl = (addon, resource, type, id, extra) => `${baseUrl(addon)}/${[resource, type, id].filter(Boolean).map(part).join('/')}.json${extra ? `?${extra}` : ''}`;
+  const addonUrl = (addon, resource, type, id, extra) => {
+    const path = [resource, type, id].filter(Boolean).map(part);
+    if (extra) path.push(Object.entries(extra).map(([key, value]) => `${part(key)}=${part(value)}`).join('&'));
+    return `${baseUrl(addon)}/${path.join('/')}.json`;
+  };
   function supports(addon, resource, type, id) {
     const entry = (addon.manifest.resources || []).find(value => (typeof value === 'string' ? value : value.name) === resource);
     if (!entry) return false;

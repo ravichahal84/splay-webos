@@ -88,9 +88,30 @@
     show('<h1>Search</h1><form id="search"><input placeholder="Title" autocomplete="off"><button>Search</button></form><div id="result" class="cards"></div>');
     $('#search').onsubmit = event => { event.preventDefault(); safe(async () => {
       const query = $('input', app).value.trim(); if (!query) return;
-      const searchable = rows().filter(item => (item.catalog.extra || item.catalog.extraSupported || []).some(extra => (extra.name || extra) === 'search'));
-      const results = await Promise.all(searchable.map(item => SplayApi.catalog(item.addon, item.catalog.type, item.catalog.id, 'search=' + encodeURIComponent(query)).catch(() => [])));
-      const unique = new Map(); results.flat().forEach(meta => unique.set(meta.id, meta)); const box = $('#result'); box.innerHTML = ''; cards(box, [...unique.values()]); if (!box.children.length) box.textContent = 'No titles returned.';
+      const searchable = addons.flatMap(addon => (addon.manifest.catalogs || [])
+        .filter(catalog => catalog.type && catalog.id && (catalog.extra || catalog.extraSupported || []).some(extra => (extra.name || extra) === 'search'))
+        .map(catalog => ({ addon, catalog })));
+      const box = $('#result');
+      box.innerHTML = '';
+      if (!searchable.length) {
+        box.textContent = 'No installed add-ons provide title search. Add a search-enabled catalogue in Stremio.';
+        return;
+      }
+      const results = await Promise.all(searchable.map(async item => {
+        try {
+          return { metas: await SplayApi.catalog(item.addon, item.catalog.type, item.catalog.id, { search: query }), failed: false };
+        } catch (_) {
+          return { metas: [], failed: true };
+        }
+      }));
+      const unique = new Map();
+      results.flatMap(result => result.metas).filter(meta => meta && meta.id).forEach(meta => {
+        if (!unique.has(meta.id)) unique.set(meta.id, meta);
+      });
+      cards(box, [...unique.values()]);
+      if (!box.children.length) box.textContent = results.length && results.every(result => result.failed)
+        ? 'Search failed for all search-enabled add-ons. Check your connection and add-on availability.'
+        : `No results found for “${query}”.`;
     }); };
   }
   async function details(item, playImmediately) {

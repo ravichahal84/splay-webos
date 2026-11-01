@@ -14,4 +14,28 @@ const ranked = api.rankStreams([
 ], { maxHeight: 1080, allowHdr: true });
 assert.equal(ranked.length, 1);
 assert.equal(ranked[0].splay.height, 1080);
-console.log('API tests passed');
+
+async function testCatalogSearchPath() {
+  const originalFetch = global.fetch;
+  const expectedUrl = 'https://addon.example/catalog/movie/top/search=star%20wars%20%26%20beyond.json';
+  try {
+    global.fetch = async url => {
+      assert.equal(url, expectedUrl);
+      return { ok: true, json: async () => ({ metas: [{ id: 'tt123', name: 'Star Wars' }] }) };
+    };
+    const metas = await api.catalog(
+      { transportUrl: 'https://addon.example/manifest.json', manifest: {} },
+      'movie',
+      'top',
+      { search: 'star wars & beyond' }
+    );
+    assert.deepEqual(metas, [{ id: 'tt123', name: 'Star Wars' }]);
+  } finally {
+    global.fetch = originalFetch;
+  }
+}
+
+testCatalogSearchPath().then(() => console.log('API tests passed')).catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});
