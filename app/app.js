@@ -13,6 +13,10 @@
   };
   const readProgress = id => Number(localStorage.getItem(progressKey(id)) || 0) || 0;
   const saveProgress = (id, seconds) => { if (id && Number.isFinite(seconds)) localStorage.setItem(progressKey(id), String(Math.max(0, seconds))); };
+  const formatTime = seconds => {
+    const value = Math.max(0, Math.floor(seconds));
+    return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}`;
+  };
   const prefs = () => Object.assign({ maxHeight: 2160, allowHdr: true, preferHdr: false, preferHevc: false, autoPlay: true }, JSON.parse(localStorage.getItem('splay.preferences') || '{}'));
   const savePrefs = value => localStorage.setItem('splay.preferences', JSON.stringify(value));
   const e = value => String(value || '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
@@ -114,22 +118,51 @@
       ordered.forEach((stream, index) => { const button = document.createElement('button'); button.className = 'stream'; button.innerHTML = `${index === 0 ? '<b>BEST MATCH</b> ' : ''}${e(streamLabel(stream))}<small>${e(stream.provider || '')}</small>`; button.onclick = () => playQueue(ordered, index); box.append(button); });
     });
   }
-  function playQueue(queue, index) {
+  function playQueue(queue, index, startAt) {
+    const id = selectedVideo.id || selected.id;
+    if (startAt === undefined) {
+      const saved = readProgress(id);
+      if (saved > 15) {
+        show(`<section class="center"><h1>Continue watching?</h1><p>Saved progress: ${e(formatTime(saved))}</p><button id="resume">Resume</button> <button id="start-over" class="quiet">Start over</button><p><button id="back" class="quiet">Choose a different source</button></p></section>`);
+        $('#resume').onclick = () => playQueue(queue, index, saved);
+        $('#start-over').onclick = () => { saveProgress(id, 0); playQueue(queue, index, 0); };
+        $('#back').onclick = () => streams(selectedVideo, false);
+        return;
+      }
+      startAt = 0;
+    }
     const stream = queue[index], label = streamLabel(stream);
     addToHistory(selectedVideo);
-    const resumeAt = readProgress(selectedVideo.id || selected.id);
     show(`<button class="back">← Back</button><h1>${e(selectedVideo.name || selected.name)}</h1><p id="playing">Starting ${e(label)}…</p><video id="player" controls autoplay src="${e(stream.url)}">This stream is not supported by the TV.</video><div id="player-actions"></div>`);
     $('.back').onclick = () => streams(selectedVideo, false);
     const player = $('#player');
     let lastSaved = 0;
-    player.onloadedmetadata = () => { if (resumeAt > 0 && resumeAt < player.duration - 15) player.currentTime = resumeAt; };
+    player.onloadedmetadata = () => { if (startAt > 0 && startAt < player.duration - 15) player.currentTime = startAt; };
     player.ontimeupdate = () => {
-      if (player.currentTime - lastSaved >= 10) { lastSaved = player.currentTime; saveProgress(selectedVideo.id || selected.id, player.currentTime); }
+      if (player.currentTime - lastSaved >= 10) { lastSaved = player.currentTime; saveProgress(id, player.currentTime); }
     };
-    player.onended = () => saveProgress(selectedVideo.id || selected.id, 0);
-    player.onerror = () => { if (index + 1 < queue.length) { $('#playing').textContent = 'That format failed. Trying the next compatible source…'; playQueue(queue, index + 1); } else { $('#playing').textContent = 'None of the available direct sources played on this TV. Choose another source or adjust its format in Stremio.'; } };
+    player.onpause = () => { if (player.currentTime > 0) saveProgress(id, player.currentTime); };
+    player.onended = () => saveProgress(id, 0);
+    player.onerror = () => {
+      const position = player.currentTime || startAt;
+      if (position > 0) saveProgress(id, position);
+      if (index + 1 < queue.length) {
+        $('#playing').textContent = 'That format failed. Trying the next compatible source…';
+        playQueue(queue, index + 1, position);
+        return;
+      }
+      const errors = { 1: 'Playback was interrupted.', 2: 'The network could not load this stream.', 3: 'The TV could not decode this stream format.', 4: 'This stream format is not supported by the TV.' };
+      const code = player.error && player.error.code;
+      $('#playing').textContent = `${errors[code] || 'This stream could not be played.'} Try another source or format.`;
+      const actions = $('#player-actions'); actions.innerHTML = '';
+      const retry = document.createElement('button'); retry.textContent = 'Retry sources'; retry.onclick = () => playQueue(queue, 0, position); actions.append(retry);
+      const choose = document.createElement('button'); choose.className = 'quiet'; choose.textContent = 'Choose a source'; choose.onclick = () => streams(selectedVideo, false); actions.append(choose);
+      if (position > 0) {
+        const restart = document.createElement('button'); restart.className = 'quiet'; restart.textContent = 'Start over'; restart.onclick = () => { saveProgress(id, 0); playQueue(queue, 0, 0); }; actions.append(restart);
+      }
+    };
     const actions = $('#player-actions');
-    if (index + 1 < queue.length) { const next = document.createElement('button'); next.className = 'quiet'; next.textContent = 'Try next source'; next.onclick = () => playQueue(queue, index + 1); actions.append(next); }
+    if (index + 1 < queue.length) { const next = document.createElement('button'); next.className = 'quiet'; next.textContent = 'Try next source'; next.onclick = () => playQueue(queue, index + 1, player.currentTime || startAt); actions.append(next); }
   }
   function addonView() { show('<h1>Your add-ons</h1>' + addons.map(addon => `<article><h2>${e(addon.manifest.name)}</h2><p>${e(addon.manifest.description || addon.transportUrl)}</p></article>`).join('')); }
   function settings() {

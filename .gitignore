@@ -1,5 +1,6 @@
 dist/
 *.ipk
+!homebrew/*.ipk
 .DS_Store
 __pycache__/
 node_modules/

@@ -1,15 +1,15 @@
 {
   "id": "org.community.alder.webos",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "type": "web",
   "title": "Splay",
   "appDescription": "Stremio client for webOS with direct debrid playback and source fallback.",
   "iconUri": "https://raw.githubusercontent.com/ravichahal84/splay-webos/main/app/largeIcon.png",
   "sourceUrl": "https://github.com/ravichahal84/splay-webos",
   "rootRequired": false,
-  "ipkUrl": "https://raw.githubusercontent.com/ravichahal84/splay-webos/main/homebrew/org.community.alder.webos_0.2.2_all.ipk",
+  "ipkUrl": "https://raw.githubusercontent.com/ravichahal84/splay-webos/main/homebrew/org.community.alder.webos_0.2.3_all.ipk",
   "ipkHash": {
-    "sha256": "fbe8ef716db68b5b8d7054f3fe213500d75d4bd97cfe3955f8e7d4e08575434e"
+    "sha256": "e6af9757caaaed1d08890c2ccf733d5ecea1adc77a4fc93fdd6d7d06afe92d7f"
   },
-  "ipkSize": 10648
+  "ipkSize": 10990
 }
