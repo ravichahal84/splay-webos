@@ -45,6 +45,7 @@
     async addons(authKey) { return (await core('addonCollectionGet', { type: 'AddonCollectionGet', authKey, update: true })).addons || []; },
     async catalog(addon, type, id, extra) { return (await get(addonUrl(addon, 'catalog', type, id, extra))).metas || []; },
     async streams(addon, type, id) { return ((await get(addonUrl(addon, 'stream', type, id))).streams || []).filter(stream => stream && isHttpUrl(stream.url) && !stream.infoHash); },
+    async subtitles(addon, type, id) { return ((await get(addonUrl(addon, 'subtitles', type, id))).subtitles || []).filter(subtitle => subtitle && isHttpUrl(subtitle.url)); },
     async meta(addons, type, id) {
       for (const addon of addons.filter(addon => supports(addon, 'meta', type, id))) try { const meta = (await get(addonUrl(addon, 'meta', type, id))).meta; if (meta) return meta; } catch (_) { /* try next add-on */ }
       try { return (await get(`${CINEMETA}meta/${part(type)}/${part(id)}.json`)).meta || null; } catch (_) { return null; }

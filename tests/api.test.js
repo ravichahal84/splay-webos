@@ -4,6 +4,7 @@ const api = require('../app/api.js');
 assert.equal(typeof api.createLink, 'function');
 assert.equal(typeof api.catalog, 'function');
 assert.equal(typeof api.streams, 'function');
+assert.equal(typeof api.subtitles, 'function');
 assert.equal(typeof api.rankStreams, 'function');
 assert.equal(api.isHttpUrl('javascript:alert(1)'), false);
 assert.equal(api.isHttpUrl('https://example.test/video.mp4'), true);
@@ -35,7 +36,32 @@ async function testCatalogSearchPath() {
   }
 }
 
-testCatalogSearchPath().then(() => console.log('API tests passed')).catch(error => {
+async function testSubtitleLookup() {
+  const originalFetch = global.fetch;
+  const expectedUrl = 'https://addon.example/subtitles/series/tt123:1:2.json';
+  try {
+    global.fetch = async url => {
+      assert.equal(url, expectedUrl);
+      return {
+        ok: true,
+        json: async () => ({ subtitles: [
+          { id: 'en', lang: 'eng', url: 'https://subs.example/episode.vtt' },
+          { id: 'bad', lang: 'eng', url: 'javascript:alert(1)' }
+        ] })
+      };
+    };
+    const subtitles = await api.subtitles(
+      { transportUrl: 'https://addon.example/manifest.json', manifest: {} },
+      'series',
+      'tt123:1:2'
+    );
+    assert.deepEqual(subtitles, [{ id: 'en', lang: 'eng', url: 'https://subs.example/episode.vtt' }]);
+  } finally {
+    global.fetch = originalFetch;
+  }
+}
+
+Promise.all([testCatalogSearchPath(), testSubtitleLookup()]).then(() => console.log('API tests passed')).catch(error => {
   console.error(error);
   process.exitCode = 1;
 });

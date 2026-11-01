@@ -6,6 +6,7 @@
   const historyKey = 'splay.history';
   const favoritesKey = 'splay.favorites';
   const progressKey = id => 'splay.progress:' + String(id);
+  let nextEpisodeTimer = null, nextEpisodeInterval = null, subtitleObjectUrls = [];
   const readHistory = () => { try { const value = JSON.parse(localStorage.getItem(historyKey) || '[]'); return Array.isArray(value) ? value.slice(0, 8) : []; } catch (_) { return []; } };
   const readFavorites = () => { try { const value = JSON.parse(localStorage.getItem(favoritesKey) || '[]'); return Array.isArray(value) ? value.slice(0, 50) : []; } catch (_) { return []; } };
   const isFavorite = item => readFavorites().some(value => value.id === item.id);
@@ -23,6 +24,12 @@
   };
   const readProgress = id => Number(localStorage.getItem(progressKey(id)) || 0) || 0;
   const saveProgress = (id, seconds) => { if (id && Number.isFinite(seconds)) localStorage.setItem(progressKey(id), String(Math.max(0, seconds))); };
+  const clearNextEpisodeCountdown = () => {
+    clearTimeout(nextEpisodeTimer);
+    clearInterval(nextEpisodeInterval);
+    nextEpisodeTimer = null;
+    nextEpisodeInterval = null;
+  };
   const formatTime = seconds => {
     const value = Math.max(0, Math.floor(seconds));
     return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}`;
@@ -31,7 +38,7 @@
   const savePrefs = value => localStorage.setItem('splay.preferences', JSON.stringify(value));
   const e = value => String(value || '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   const image = (meta, kind) => SplayApi.normalizeUrl(SplayApi.image(meta[kind] || (kind === 'poster' ? meta.poster || meta.imdb_id : meta.imdb_id), kind));
-  const show = html => { app.innerHTML = html; setTimeout(() => ($('button,input,select', app) || app).focus()); };
+  const show = html => { clearNextEpisodeCountdown(); app.innerHTML = html; setTimeout(() => ($('button,input,select', app) || app).focus()); };
   const safe = async work => { try { $('#status').textContent = 'Loading…'; await work(); } catch (error) { app.insertAdjacentHTML('afterbegin', `<p class="error">${e(error.message)}</p>`); } finally { $('#status').textContent = ''; } };
   const typeFor = item => item.type === 'series' ? 'series' : 'movie';
   const directAddons = (type, id) => addons.filter(addon => SplayApi.supports(addon, 'stream', type, id));
@@ -65,7 +72,7 @@
       $('#check').onclick = () => safe(async () => { const key = await SplayApi.readLink(link.code); if (!key) throw Error('Still waiting for approval.'); auth = key; localStorage.setItem('splay.authKey', key); await load(); home(); });
     });
   }
-  async function load() { addons = (await SplayApi.addons(auth)).filter(addon => addon.manifest && addon.manifest.catalogs); nav.classList.remove('hidden'); }
+  async function load() { addons = (await SplayApi.addons(auth)).filter(addon => addon.manifest); nav.classList.remove('hidden'); }
   async function home() {
     show('<section id="hero" class="hero"><div><p class="eyebrow">SPLAY</p><h1>Loading your Stremio home…</h1></div></section><div id="rows"><p>Loading catalogues…</p></div>');
     await safe(async () => {
@@ -172,20 +179,148 @@
     const info = stream.splay || SplayApi.details(stream), format = [info.height && info.height + 'p', info.hdr && 'HDR', info.hevc && 'HEVC', info.audio && 'surround audio'].filter(Boolean).join(' · ');
     return [format, stream.name || stream.title || stream.filename || 'Direct stream'].filter(Boolean).join(' — ');
   }
-  async function streams(video, autoPlay) {
+  const asEpisode = (video, series) => Object.assign({}, video, {
+    type: 'series',
+    poster: video.thumbnail || series.poster,
+    background: series.background,
+    name: video.title || series.name
+  });
+  function nextEpisode(video) {
+    if (typeFor(video) !== 'series' || !Array.isArray(selected && selected.videos)) return null;
+    const episodes = selected.videos.filter(item => item && item.id).slice().sort((a, b) =>
+      (Number(a.season) || 0) - (Number(b.season) || 0) || (Number(a.episode) || 0) - (Number(b.episode) || 0));
+    const currentIndex = episodes.findIndex(item => item.id === video.id);
+    return currentIndex >= 0 ? episodes[currentIndex + 1] || null : null;
+  }
+  function offerNextEpisode(episode) {
+    show(`<section class="center"><h1>Episode finished</h1><p>Next up: ${e([episode.season && `Season ${episode.season}`, episode.episode && `Episode ${episode.episode}`, episode.title || episode.name].filter(Boolean).join(' · ') || selected.name)}</p><p id="next-countdown">Playing next episode in 10 seconds…</p><button id="play-next">Play next now</button> <button id="cancel-next" class="quiet">Cancel</button></section>`);
+    let remaining = 10;
+    const countdown = $('#next-countdown');
+    $('#play-next').onclick = () => {
+      clearNextEpisodeCountdown();
+      selectedVideo = asEpisode(episode, selected);
+      streams(selectedVideo, true, true);
+    };
+    $('#cancel-next').onclick = () => {
+      clearNextEpisodeCountdown();
+      renderDetails(false);
+    };
+    nextEpisodeInterval = setInterval(() => {
+      remaining -= 1;
+      if (countdown) countdown.textContent = `Playing next episode in ${remaining} seconds…`;
+    }, 1000);
+    nextEpisodeTimer = setTimeout(() => {
+      clearNextEpisodeCountdown();
+      selectedVideo = asEpisode(episode, selected);
+      streams(selectedVideo, true, true);
+    }, 10000);
+  }
+  const subtitleFormat = subtitle => {
+    const format = String(subtitle.format || new URL(subtitle.url).pathname.split('.').pop()).toLowerCase();
+    if (/srt|subrip/.test(format)) return 'srt';
+    if (/vtt/.test(format)) return 'vtt';
+    return format;
+  };
+  async function loadSubtitles(video, player) {
+    const status = $('#subtitle-status');
+    const box = $('#subtitle-options');
+    const supported = addons.filter(addon => SplayApi.supports(addon, 'subtitles', typeFor(video), video.id));
+    if (!supported.length) {
+      status.textContent = 'No subtitle add-ons are available for this episode.';
+      return;
+    }
+    const responses = await Promise.all(supported.map(async addon => {
+      try {
+        const subtitles = (await SplayApi.subtitles(addon, typeFor(video), video.id))
+          .map(subtitle => Object.assign({}, subtitle, { provider: addon.manifest.name }))
+          .filter(subtitle => ['vtt', 'srt'].includes(subtitleFormat(subtitle)));
+        return { subtitles, failed: false };
+      } catch (_) {
+        return { subtitles: [], failed: true };
+      }
+    }));
+    if (!player.isConnected) return;
+    const subtitles = [...new Map(responses.flatMap(result => result.subtitles).map(subtitle => [`${subtitle.url}|${subtitle.lang || ''}`, subtitle])).values()];
+    if (!subtitles.length) {
+      status.textContent = responses.every(result => result.failed)
+        ? 'Subtitle lookup failed for all installed subtitle add-ons. Check your connection and add-on availability.'
+        : 'No supported subtitles were returned by installed add-ons.';
+      return;
+    }
+    const tracks = [];
+    const clearTracks = () => {
+      tracks.forEach(track => track.remove());
+      subtitleObjectUrls.forEach(url => URL.revokeObjectURL(url));
+      subtitleObjectUrls = [];
+    };
+    const off = document.createElement('button');
+    off.className = 'quiet subtitle-option selected';
+    off.textContent = 'Subtitles off';
+    off.onclick = () => {
+      clearTracks();
+      $$('.subtitle-option', box).forEach(button => button.classList.remove('selected'));
+      off.classList.add('selected');
+      status.textContent = 'Subtitles off.';
+    };
+    box.append(off);
+    subtitles.forEach((subtitle, index) => {
+      const language = subtitle.lang || subtitle.label || `Subtitle ${index + 1}`;
+      const button = document.createElement('button');
+      button.className = 'quiet subtitle-option';
+      button.textContent = `${language} · ${subtitle.provider}`;
+      button.onclick = async () => {
+        if (!player.isConnected) return;
+        clearTracks();
+        $$('.subtitle-option', box).forEach(value => value.classList.remove('selected'));
+        button.classList.add('selected');
+        status.textContent = `Loading ${language} subtitles…`;
+        try {
+          let source = subtitle.url;
+          if (subtitleFormat(subtitle) === 'srt') {
+            const response = await fetch(source);
+            if (!response.ok) throw Error(`Subtitle request failed (${response.status}).`);
+            const content = (await response.text()).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
+            source = URL.createObjectURL(new Blob([`WEBVTT\n\n${content}`], { type: 'text/vtt' }));
+            subtitleObjectUrls.push(source);
+          }
+          const track = document.createElement('track');
+          track.kind = 'subtitles';
+          track.label = language;
+          track.srclang = String(subtitle.lang || 'und').split('-')[0].slice(0, 3);
+          track.src = source;
+          track.default = true;
+          track.dataset.splaySubtitle = 'true';
+          track.onerror = () => {
+            if (track.isConnected) status.textContent = `Could not load ${language} subtitles. Check the connection or choose another track.`;
+          };
+          player.append(track);
+          tracks.push(track);
+          track.track.mode = 'showing';
+          status.textContent = `${language} subtitles selected.`;
+        } catch (error) {
+          status.textContent = `Could not load ${language} subtitles: ${error.message}`;
+        }
+      };
+      box.append(button);
+    });
+    status.textContent = `${subtitles.length} subtitle track${subtitles.length === 1 ? '' : 's'} available.${responses.some(result => result.failed) ? ' Some add-ons could not be reached.' : ''}`;
+  }
+  async function streams(video, autoPlay, forceAutoPlay) {
     show(`<button class="back">← Back</button><h1>${e(autoPlay ? 'Finding best source…' : 'Choose a source')}</h1><div id="streams"></div>`);
     $('.back').onclick = () => renderDetails(false);
     await safe(async () => {
       const answers = await Promise.all(directAddons(typeFor(video), video.id).map(async addon => (await SplayApi.streams(addon, typeFor(video), video.id).catch(() => [])).map(stream => Object.assign(stream, { provider: addon.manifest.name }))));
       const ordered = SplayApi.rankStreams(answers.flat(), prefs());
       if (!ordered.length) throw Error('No direct, TV-compatible stream was returned. Check your debrid add-on and source settings in Stremio.');
-      if (autoPlay && prefs().autoPlay) return playQueue(ordered, 0);
+      if (autoPlay && (forceAutoPlay || prefs().autoPlay)) return playQueue(ordered, 0);
       const box = $('#streams'); box.innerHTML = '<p>Direct sources are ranked for this TV. “Best match” follows your Settings.</p>';
       ordered.forEach((stream, index) => { const button = document.createElement('button'); button.className = 'stream'; button.innerHTML = `${index === 0 ? '<b>BEST MATCH</b> ' : ''}${e(streamLabel(stream))}<small>${e(stream.provider || '')}</small>`; button.onclick = () => playQueue(ordered, index); box.append(button); });
     });
   }
   function playQueue(queue, index, startAt) {
     const id = selectedVideo.id || selected.id;
+    subtitleObjectUrls.forEach(url => URL.revokeObjectURL(url));
+    subtitleObjectUrls = [];
     if (startAt === undefined) {
       const saved = readProgress(id);
       if (saved > 15) {
@@ -199,7 +334,7 @@
     }
     const stream = queue[index], label = streamLabel(stream);
     addToHistory(selectedVideo);
-    show(`<button class="back">← Back</button><h1>${e(selectedVideo.name || selected.name)}</h1><p id="playing">Starting ${e(label)}…</p><video id="player" controls autoplay src="${e(stream.url)}">This stream is not supported by the TV.</video><div id="player-actions"></div>`);
+    show(`<button class="back">← Back</button><h1>${e(selectedVideo.name || selected.name)}</h1><p id="playing">Starting ${e(label)}…</p><video id="player" controls autoplay src="${e(stream.url)}">This stream is not supported by the TV.</video><section class="subtitle-controls"><h2>Subtitles</h2><p id="subtitle-status">Looking for subtitles…</p><div id="subtitle-options" class="subtitle-options"></div></section><div id="player-actions"></div>`);
     $('.back').onclick = () => streams(selectedVideo, false);
     const player = $('#player');
     let lastSaved = 0;
@@ -208,7 +343,13 @@
       if (player.currentTime - lastSaved >= 10) { lastSaved = player.currentTime; saveProgress(id, player.currentTime); }
     };
     player.onpause = () => { if (player.currentTime > 0) saveProgress(id, player.currentTime); };
-    player.onended = () => saveProgress(id, 0);
+    loadSubtitles(selectedVideo, player);
+    player.onended = () => {
+      saveProgress(id, 0);
+      const next = nextEpisode(selectedVideo);
+      if (next) offerNextEpisode(next);
+      else $('#playing').textContent = 'Playback finished.';
+    };
     player.onerror = () => {
       const position = player.currentTime || startAt;
       if (position > 0) saveProgress(id, position);

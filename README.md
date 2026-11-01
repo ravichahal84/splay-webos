@@ -13,7 +13,7 @@ An early, experimental webOS client for Stremio. It links a Stremio account with
 node tests/api.test.js
 node --check app/api.js && node --check app/app.js
 ares-package -o dist app
-ares-install --device <tv-name> dist/org.community.alder.webos_0.2.6_all.ipk
+ares-install --device <tv-name> dist/org.community.alder.webos_0.2.7_all.ipk
 ares-launch --device <tv-name> org.community.alder.webos
 ```
 
@@ -21,15 +21,15 @@ ares-launch --device <tv-name> org.community.alder.webos
 
 ## Homebrew distribution
 
-The repository is public. Add the `homebrew-repository.json` URL to Homebrew Channel to use this custom catalogue. The catalogue and its package manifest are hosted in the repository; release IPKs are attached to GitHub Releases. Version 0.2.6 is an experimental preview; playback and add-on compatibility have not yet been verified on the target TVs. Do not enter a Stremio password on the TV; account linking uses Stremio's one-time code flow.
+The repository is public. Add the `homebrew-repository.json` URL to Homebrew Channel to use this custom catalogue. The catalogue and its package manifest are hosted in the repository; release IPKs are attached to GitHub Releases. Version 0.2.7 is an experimental preview; playback and add-on compatibility have not yet been verified on the target TVs. Series playback offers a 10-second next-episode countdown, and subtitle tracks are loaded from installed Stremio subtitle add-ons (WebVTT and SRT). Subtitle availability and rendering depend on the add-on, stream, and TV. Do not enter a Stremio password on the TV; account linking uses Stremio's one-time code flow.
 
 ## Publishing a Homebrew release
 
-Bump `app/appinfo.json`, run the local checks above, and push a matching version tag (for example, `v0.2.7`) pointing to the release commit. The release workflow verifies the tag matches the app version, builds and attaches the IPK and manifest to the GitHub Release, then updates the catalogue manifest on `main`. The tag push requires a repository token or account permitted to push tags; the workflow's `GITHUB_TOKEN` must be allowed to write to `main`.
+Bump `app/appinfo.json`, run the local checks above, and push a matching version tag (for example, `v0.2.8`) pointing to the release commit. The release workflow verifies the tag matches the app version, builds and attaches the IPK and manifest to the GitHub Release, then updates the catalogue manifest on `main`. The tag push requires a repository token or account permitted to push tags; the workflow's `GITHUB_TOKEN` must be allowed to write to `main`.
 
 ## Device testing
 
-Before treating a model as supported, verify account linking, catalogue loading, remote-control navigation, playback, resume, source fallback, and playback error recovery on the physical TV. Record the TV model, webOS version, stream format, and results below; do not mark a device verified based only on the emulator or package build.
+Before treating a model as supported, verify account linking, catalogue loading, remote-control navigation, playback, resume, source fallback, playback error recovery, next-episode countdown/cancel, and subtitle selection/rendering on the physical TV. Record the TV model, webOS version, stream format, and results below; do not mark a device verified based only on the emulator or package build.
 
 | TV model | webOS | Link/catalogue | Playback/resume | Source fallback/errors |
 | --- | --- | --- | --- | --- |
