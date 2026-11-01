@@ -2,7 +2,9 @@ name: Package Splay webOS
 on:
   push:
     tags: ['v*']
-  workflow_dispatch:
+concurrency:
+  group: homebrew-release
+  cancel-in-progress: false
 permissions:
   contents: write
 jobs:
@@ -18,12 +20,23 @@ jobs:
           npm install --global @webos-tools/cli
           mkdir -p dist
           ares-package -o dist app
-          python3 scripts/prepare_release.py --ipk dist/*.ipk --repo "${{ github.repository }}"
+          python3 scripts/prepare_release.py --ipk dist/*.ipk --repo "$GITHUB_REPOSITORY" --tag "$GITHUB_REF_NAME"
       - uses: actions/upload-artifact@v4
         with:
           name: splay-webos-build
           path: dist/*
-      - name: Publish tagged release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publish GitHub release
         env: { GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}' }
-        run: gh release create "${{ github.ref_name }}" dist/*.ipk dist/*.manifest.json --title "Splay webOS ${{ github.ref_name }}" --notes "Experimental webOS preview; test on a physical TV before distribution."
+        run: gh release create "$GITHUB_REF_NAME" dist/*.ipk dist/*.manifest.json --title "Splay webOS $GITHUB_REF_NAME" --notes "Experimental webOS preview; test on a physical TV before distribution."
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: catalogue
+      - name: Update Homebrew catalogue
+        run: |
+          cp dist/*.manifest.json catalogue/homebrew/
+          git -C catalogue config user.name "github-actions[bot]"
+          git -C catalogue config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C catalogue add homebrew/org.community.alder.webos.manifest.json
+          git -C catalogue commit -m "Update Homebrew catalogue for $GITHUB_REF_NAME" -m "Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
+          git -C catalogue push origin HEAD:main
