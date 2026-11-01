@@ -3,12 +3,22 @@
   const $ = (selector, root = document) => root.querySelector(selector);
   const app = $('#app'), nav = $('nav');
   let auth = localStorage.getItem('splay.authKey'), addons = [], selected = null, selectedVideo = null;
+  const addonHealth = new Map();
   const historyKey = 'splay.history';
   const favoritesKey = 'splay.favorites';
+  const subtitleLanguagesKey = 'splay.subtitleLanguages';
   const progressKey = id => 'splay.progress:' + String(id);
   let nextEpisodeTimer = null, nextEpisodeInterval = null, subtitleObjectUrls = [];
   const readHistory = () => { try { const value = JSON.parse(localStorage.getItem(historyKey) || '[]'); return Array.isArray(value) ? value.slice(0, 8) : []; } catch (_) { return []; } };
   const readFavorites = () => { try { const value = JSON.parse(localStorage.getItem(favoritesKey) || '[]'); return Array.isArray(value) ? value.slice(0, 50) : []; } catch (_) { return []; } };
+  const readSubtitleLanguages = () => {
+    try {
+      const value = localStorage.getItem(subtitleLanguagesKey);
+      if (value === null) return null;
+      const languages = JSON.parse(value);
+      return Array.isArray(languages) ? languages.filter(language => typeof language === 'string') : null;
+    } catch (_) { return null; }
+  };
   const isFavorite = item => readFavorites().some(value => value.id === item.id);
   const toggleFavorite = item => {
     const favorites = readFavorites();
@@ -17,9 +27,23 @@
       : [{ id: item.id, type: item.type || 'movie', name: item.name, poster: item.poster || '' }, ...favorites].slice(0, 50);
     localStorage.setItem(favoritesKey, JSON.stringify(updated));
   };
-  const addToHistory = item => {
+  const addToHistory = (item, series) => {
     if (!item || !item.id || !item.name) return;
-    const entry = { id: item.id, type: item.type || 'movie', name: item.name, poster: item.poster || '', updatedAt: Date.now() };
+    const episode = series && typeFor(item) === 'series';
+    const entry = episode
+      ? {
+          id: item.id,
+          episodeId: item.id,
+          seriesId: series.id,
+          seriesName: series.name,
+          type: 'series',
+          name: [series.name, item.season && `S${String(item.season).padStart(2, '0')}E${String(item.episode || 0).padStart(2, '0')}`, item.title || item.name].filter(Boolean).join(' · '),
+          poster: item.poster || series.poster || '',
+          season: Number(item.season) || 0,
+          episode: Number(item.episode) || 0,
+          updatedAt: Date.now()
+        }
+      : { id: item.id, type: item.type || 'movie', name: item.name, poster: item.poster || '', updatedAt: Date.now() };
     localStorage.setItem(historyKey, JSON.stringify([entry, ...readHistory().filter(value => value.id !== entry.id)].slice(0, 8)));
   };
   const readProgress = id => Number(localStorage.getItem(progressKey(id)) || 0) || 0;
@@ -42,14 +66,33 @@
   const safe = async work => { try { $('#status').textContent = 'Loading…'; await work(); } catch (error) { app.insertAdjacentHTML('afterbegin', `<p class="error">${e(error.message)}</p>`); } finally { $('#status').textContent = ''; } };
   const typeFor = item => item.type === 'series' ? 'series' : 'movie';
   const directAddons = (type, id) => addons.filter(addon => SplayApi.supports(addon, 'stream', type, id));
+  const addonKey = addon => addon.manifest.id || addon.manifest.name || addon.transportUrl;
+  async function trackedAddonRequest(addon, resource, label, request) {
+    const key = JSON.stringify([addonKey(addon), resource, label]);
+    const record = addonHealth.get(key) || { addonId: addonKey(addon), addon: addon.manifest.name || addon.transportUrl, resource, label };
+    record.state = 'checking';
+    record.message = '';
+    record.retry = () => trackedAddonRequest(addon, resource, label, request);
+    record.checkedAt = Date.now();
+    addonHealth.set(key, record);
+    try {
+      const result = await request();
+      record.state = 'available';
+      return result;
+    } catch (error) {
+      record.state = 'failed';
+      record.message = error && error.message ? error.message : 'Request failed.';
+      throw error;
+    }
+  }
   const homeSectionsMarkup = () => {
-    const continuing = readHistory().filter(item => readProgress(item.id) > 15);
+    const continuing = readHistory().filter(item => readProgress(item.episodeId || item.id) > 15);
     const favorites = readFavorites();
     return `${favorites.length ? '<section><h2>Favorites</h2><div id="favorites" class="cards"></div></section>' : ''}${continuing.length ? '<section><h2>Continue watching</h2><div id="history" class="cards"></div></section>' : ''}`;
   };
   function showHomeSections() {
     const box = $('#history');
-    if (box) cards(box, readHistory().filter(item => readProgress(item.id) > 15));
+    if (box) cards(box, readHistory().filter(item => readProgress(item.episodeId || item.id) > 15));
     const favoriteBox = $('#favorites');
     if (favoriteBox) cards(favoriteBox, readFavorites());
   }
@@ -58,7 +101,7 @@
     items.forEach(meta => {
       const card = $('#card').content.firstElementChild.cloneNode(true), poster = $('img', card);
       poster.src = image(meta, 'poster'); poster.alt = meta.name || ''; $('span', card).textContent = meta.name || meta.id;
-      card.onclick = () => details(meta); box.append(card);
+      card.onclick = () => details(meta, false, meta.episodeId); box.append(card);
     });
   }
   function rows() {
@@ -76,7 +119,10 @@
   async function home() {
     show('<section id="hero" class="hero"><div><p class="eyebrow">SPLAY</p><h1>Loading your Stremio home…</h1></div></section><div id="rows"><p>Loading catalogues…</p></div>');
     await safe(async () => {
-      const result = await Promise.all(rows().map(async item => Object.assign({}, item, { metas: await SplayApi.catalog(item.addon, item.catalog.type, item.catalog.id).catch(() => []) })));
+      const result = await Promise.all(rows().map(async item => Object.assign({}, item, {
+        metas: await trackedAddonRequest(item.addon, 'catalog', item.catalog.name || item.catalog.id,
+          () => SplayApi.catalog(item.addon, item.catalog.type, item.catalog.id)).catch(() => [])
+      })));
       const first = result.flatMap(item => item.metas)[0]; if (first) paintHero(first);
       const box = $('#rows'); box.innerHTML = homeSectionsMarkup() + result.map((item, index) => `<section><h2>${e(item.catalog.name || item.catalog.id)} <small>${e(item.addon.manifest.name)}</small></h2><div class="cards" id="row-${index}"></div></section>`).join('');
       showHomeSections();
@@ -106,7 +152,11 @@
       }
       const results = await Promise.all(searchable.map(async item => {
         try {
-          return { metas: await SplayApi.catalog(item.addon, item.catalog.type, item.catalog.id, { search: query }), failed: false };
+          return {
+            metas: await trackedAddonRequest(item.addon, 'catalog', `${item.catalog.name || item.catalog.id} search`,
+              () => SplayApi.catalog(item.addon, item.catalog.type, item.catalog.id, { search: query })),
+            failed: false
+          };
         } catch (_) {
           return { metas: [], failed: true };
         }
@@ -121,14 +171,18 @@
         : `No results found for “${query}”.`;
     }); };
   }
-  async function details(item, playImmediately) {
-    selected = item; selectedVideo = item;
+  async function details(item, playImmediately, episodeId) {
+    const target = item.seriesId
+      ? Object.assign({}, item, { id: item.seriesId, name: item.seriesName || item.name, episodeId: episodeId || item.episodeId || item.id })
+      : item;
+    selected = target; selectedVideo = target;
     show('<p>Loading title details…</p>');
-    const meta = await SplayApi.meta(addons, typeFor(item), item.id).catch(() => null) || item;
-    selected = Object.assign({}, item, meta); selectedVideo = selected;
-    renderDetails(playImmediately);
+    const meta = await SplayApi.meta(addons, typeFor(target), target.id).catch(() => null) || target;
+    selected = Object.assign({}, target, meta);
+    selectedVideo = selected;
+    renderDetails(playImmediately, target.episodeId);
   }
-  function renderDetails(playImmediately) {
+  function renderDetails(playImmediately, episodeId, restoreEpisodeFocus) {
     const meta = selected, backdrop = image(meta, 'background'), poster = image(meta, 'poster');
     show(`<section class="detail" style="--backdrop:url('${e(backdrop)}')"><img src="${e(poster)}" alt=""><div><button class="back">← Back</button> <button class="quiet" id="favorite">${isFavorite(meta) ? 'Remove from favorites' : 'Add to favorites'}</button>${meta.logo ? `<img class="detail-logo" src="${e(meta.logo)}" alt="${e(meta.name)}">` : ''}<h1>${e(meta.name)}</h1><p>${e([meta.year, (meta.genres || []).join(', '), meta.imdbRating && 'IMDb ' + meta.imdbRating].filter(Boolean).join(' · '))}</p><p>${e(meta.description || 'No description provided.')}</p><div id="episodes"></div><button id="best">Play best source</button> <button class="quiet" id="sources">Choose source</button></div></section>`);
     $('.back').onclick = home;
@@ -140,7 +194,7 @@
     if (videos.length) {
       const box = $('#episodes');
       const seasons = [...new Set(videos.map(video => Number(video.season) || 0))].sort((a, b) => a - b);
-      const currentVideo = videos.find(video => video.id === selectedVideo.id) || videos[0];
+      const currentVideo = videos.find(video => video.id === (episodeId || selectedVideo.id)) || videos[0];
       selectedVideo = Object.assign({}, currentVideo, { type: 'series', poster: currentVideo.thumbnail || meta.poster, background: meta.background, name: currentVideo.title || meta.name });
       box.innerHTML = `<h2>Season</h2><div class="season-picker" role="group" aria-label="Choose a season">${seasons.map(season => `<button type="button" class="season${season === (Number(currentVideo.season) || 0) ? ' selected' : ''}" data-season="${season}">${season ? `Season ${season}` : 'Specials'}</button>`).join('')}</div><h2>Episodes</h2><div class="episodes" id="episode-list"></div>`;
       const seasonButtons = $$('.season', box);
@@ -172,6 +226,7 @@
       renderEpisodes(Number(currentVideo.season) || 0);
     }
     $('#best').onclick = () => streams(selectedVideo, true); $('#sources').onclick = () => streams(selectedVideo, false);
+    if (restoreEpisodeFocus) setTimeout(() => { const episode = $('.episode.selected'); if (episode) episode.focus(); }, 0);
     if (playImmediately) streams(selectedVideo, true);
   }
   function $$(selector, root = document) { return [...root.querySelectorAll(selector)]; }
@@ -187,8 +242,7 @@
   });
   function nextEpisode(video) {
     if (typeFor(video) !== 'series' || !Array.isArray(selected && selected.videos)) return null;
-    const episodes = selected.videos.filter(item => item && item.id).slice().sort((a, b) =>
-      (Number(a.season) || 0) - (Number(b.season) || 0) || (Number(a.episode) || 0) - (Number(b.episode) || 0));
+    const episodes = SplayApi.orderEpisodes(selected.videos);
     const currentIndex = episodes.findIndex(item => item.id === video.id);
     return currentIndex >= 0 ? episodes[currentIndex + 1] || null : null;
   }
@@ -203,7 +257,7 @@
     };
     $('#cancel-next').onclick = () => {
       clearNextEpisodeCountdown();
-      renderDetails(false);
+      renderDetails(false, selectedVideo.id, typeFor(selectedVideo) === 'series');
     };
     nextEpisodeInterval = setInterval(() => {
       remaining -= 1;
@@ -231,7 +285,8 @@
     }
     const responses = await Promise.all(supported.map(async addon => {
       try {
-        const subtitles = (await SplayApi.subtitles(addon, typeFor(video), video.id))
+        const subtitles = (await trackedAddonRequest(addon, 'subtitles', video.name || video.id,
+          () => SplayApi.subtitles(addon, typeFor(video), video.id)))
           .map(subtitle => Object.assign({}, subtitle, { provider: addon.manifest.name }))
           .filter(subtitle => ['vtt', 'srt'].includes(subtitleFormat(subtitle)));
         return { subtitles, failed: false };
@@ -240,13 +295,10 @@
       }
     }));
     if (!player.isConnected) return;
-    const subtitles = [...new Map(responses.flatMap(result => result.subtitles).map(subtitle => [`${subtitle.url}|${subtitle.lang || ''}`, subtitle])).values()];
-    if (!subtitles.length) {
-      status.textContent = responses.every(result => result.failed)
-        ? 'Subtitle lookup failed for all installed subtitle add-ons. Check your connection and add-on availability.'
-        : 'No supported subtitles were returned by installed add-ons.';
-      return;
-    }
+    const allSubtitles = [...new Map(responses.flatMap(result => result.subtitles).map(subtitle => [`${subtitle.url}|${subtitle.lang || ''}`, subtitle])).values()];
+    const languages = [...new Set(allSubtitles.map(SplayApi.subtitleLanguage))].sort();
+    const savedLanguages = readSubtitleLanguages();
+    const subtitles = SplayApi.filterSubtitles(allSubtitles, savedLanguages);
     const tracks = [];
     const clearTracks = () => {
       tracks.forEach(track => track.remove());
@@ -263,53 +315,112 @@
       status.textContent = 'Subtitles off.';
     };
     box.append(off);
-    subtitles.forEach((subtitle, index) => {
-      const language = subtitle.lang || subtitle.label || `Subtitle ${index + 1}`;
-      const button = document.createElement('button');
-      button.className = 'quiet subtitle-option';
-      button.textContent = `${language} · ${subtitle.provider}`;
-      button.onclick = async () => {
-        if (!player.isConnected) return;
-        clearTracks();
-        $$('.subtitle-option', box).forEach(value => value.classList.remove('selected'));
-        button.classList.add('selected');
-        status.textContent = `Loading ${language} subtitles…`;
-        try {
-          let source = subtitle.url;
-          if (subtitleFormat(subtitle) === 'srt') {
-            const response = await fetch(source);
-            if (!response.ok) throw Error(`Subtitle request failed (${response.status}).`);
-            const content = (await response.text()).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
-            source = URL.createObjectURL(new Blob([`WEBVTT\n\n${content}`], { type: 'text/vtt' }));
-            subtitleObjectUrls.push(source);
+    if (languages.length) {
+      const filters = document.createElement('div');
+      filters.className = 'subtitle-languages';
+      const heading = document.createElement('p');
+      heading.textContent = 'Show languages';
+      filters.append(heading);
+      languages.forEach(language => {
+        const label = document.createElement('label');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = savedLanguages === null || savedLanguages.includes(language);
+        checkbox.onchange = () => {
+          const selected = $$('.subtitle-language', filters).filter(input => input.checked).map(input => input.value);
+          localStorage.setItem(subtitleLanguagesKey, JSON.stringify(selected));
+          clearTracks();
+          $$('.subtitle-option', box).forEach(button => button.classList.remove('selected'));
+          off.classList.add('selected');
+          const filtered = SplayApi.filterSubtitles(allSubtitles, selected);
+          $$('.subtitle-track', box).forEach(button => button.remove());
+          if (!filtered.length) {
+            status.textContent = 'No subtitles match your language preferences.';
+            return;
           }
-          const track = document.createElement('track');
-          track.kind = 'subtitles';
-          track.label = language;
-          track.srclang = String(subtitle.lang || 'und').split('-')[0].slice(0, 3);
-          track.src = source;
-          track.default = true;
-          track.dataset.splaySubtitle = 'true';
-          track.onerror = () => {
-            if (track.isConnected) status.textContent = `Could not load ${language} subtitles. Check the connection or choose another track.`;
-          };
-          player.append(track);
-          tracks.push(track);
-          track.track.mode = 'showing';
-          status.textContent = `${language} subtitles selected.`;
-        } catch (error) {
-          status.textContent = `Could not load ${language} subtitles: ${error.message}`;
-        }
+          addSubtitleButtons(filtered);
+          status.textContent = `${filtered.length} subtitle track${filtered.length === 1 ? '' : 's'} available for your selected languages.`;
+        };
+        checkbox.className = 'subtitle-language';
+        checkbox.value = language;
+        label.append(checkbox, document.createTextNode(language));
+        filters.append(label);
+      });
+      const reset = document.createElement('button');
+      reset.className = 'quiet';
+      reset.textContent = 'Show all languages';
+      reset.onclick = () => {
+        localStorage.removeItem(subtitleLanguagesKey);
+        filters.querySelectorAll('.subtitle-language').forEach(input => { input.checked = true; });
+        clearTracks();
+        $$('.subtitle-option', box).forEach(button => button.classList.remove('selected'));
+        off.classList.add('selected');
+        $$('.subtitle-track', box).forEach(button => button.remove());
+        addSubtitleButtons(allSubtitles);
+        status.textContent = `${allSubtitles.length} subtitle track${allSubtitles.length === 1 ? '' : 's'} available.`;
       };
-      box.append(button);
-    });
-    status.textContent = `${subtitles.length} subtitle track${subtitles.length === 1 ? '' : 's'} available.${responses.some(result => result.failed) ? ' Some add-ons could not be reached.' : ''}`;
+      filters.append(reset);
+      box.append(filters);
+    }
+    function addSubtitleButtons(available) {
+      available.forEach((subtitle, index) => {
+        const language = subtitle.lang || subtitle.label || `Subtitle ${index + 1}`;
+        const button = document.createElement('button');
+        button.className = 'quiet subtitle-option subtitle-track';
+        button.textContent = `${language} · ${subtitle.provider}`;
+        button.onclick = async () => {
+          if (!player.isConnected) return;
+          clearTracks();
+          $$('.subtitle-option', box).forEach(value => value.classList.remove('selected'));
+          button.classList.add('selected');
+          status.textContent = `Loading ${language} subtitles…`;
+          try {
+            let source = subtitle.url;
+            if (subtitleFormat(subtitle) === 'srt') {
+              const response = await fetch(source);
+              if (!response.ok) throw Error(`Subtitle request failed (${response.status}).`);
+              const content = (await response.text()).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
+              source = URL.createObjectURL(new Blob([`WEBVTT\n\n${content}`], { type: 'text/vtt' }));
+              subtitleObjectUrls.push(source);
+            }
+            const track = document.createElement('track');
+            track.kind = 'subtitles';
+            track.label = language;
+            track.srclang = String(subtitle.lang || 'und').split('-')[0].slice(0, 3);
+            track.src = source;
+            track.default = true;
+            track.dataset.splaySubtitle = 'true';
+            track.onerror = () => {
+              if (track.isConnected) status.textContent = `Could not load ${language} subtitles. Check the connection or choose another track.`;
+            };
+            player.append(track);
+            tracks.push(track);
+            track.track.mode = 'showing';
+            status.textContent = `${language} subtitles selected.`;
+          } catch (error) {
+            status.textContent = `Could not load ${language} subtitles: ${error.message}`;
+          }
+        };
+        box.append(button);
+      });
+    }
+    if (subtitles.length) {
+      addSubtitleButtons(subtitles);
+      status.textContent = `${subtitles.length} subtitle track${subtitles.length === 1 ? '' : 's'} available for your selected languages.${responses.some(result => result.failed) ? ' Some add-ons could not be reached.' : ''}`;
+    } else {
+      status.textContent = allSubtitles.length
+        ? 'No subtitles match your language preferences. Change the language filter to show more.'
+        : responses.every(result => result.failed)
+        ? 'Subtitle lookup failed for all installed subtitle add-ons. Check your connection and add-on availability.'
+        : 'No supported subtitles were returned by installed add-ons.';
+    }
   }
   async function streams(video, autoPlay, forceAutoPlay) {
     show(`<button class="back">← Back</button><h1>${e(autoPlay ? 'Finding best source…' : 'Choose a source')}</h1><div id="streams"></div>`);
-    $('.back').onclick = () => renderDetails(false);
+    $('.back').onclick = () => renderDetails(false, selectedVideo.id, typeFor(selectedVideo) === 'series');
     await safe(async () => {
-      const answers = await Promise.all(directAddons(typeFor(video), video.id).map(async addon => (await SplayApi.streams(addon, typeFor(video), video.id).catch(() => [])).map(stream => Object.assign(stream, { provider: addon.manifest.name }))));
+      const answers = await Promise.all(directAddons(typeFor(video), video.id).map(async addon => (await trackedAddonRequest(addon, 'stream', video.name || video.id,
+        () => SplayApi.streams(addon, typeFor(video), video.id)).catch(() => [])).map(stream => Object.assign(stream, { provider: addon.manifest.name }))));
       const ordered = SplayApi.rankStreams(answers.flat(), prefs());
       if (!ordered.length) throw Error('No direct, TV-compatible stream was returned. Check your debrid add-on and source settings in Stremio.');
       if (autoPlay && (forceAutoPlay || prefs().autoPlay)) return playQueue(ordered, 0);
@@ -333,7 +444,7 @@
       startAt = 0;
     }
     const stream = queue[index], label = streamLabel(stream);
-    addToHistory(selectedVideo);
+    addToHistory(selectedVideo, selected);
     show(`<button class="back">← Back</button><h1>${e(selectedVideo.name || selected.name)}</h1><p id="playing">Starting ${e(label)}…</p><video id="player" controls autoplay src="${e(stream.url)}">This stream is not supported by the TV.</video><section class="subtitle-controls"><h2>Subtitles</h2><p id="subtitle-status">Looking for subtitles…</p><div id="subtitle-options" class="subtitle-options"></div></section><div id="player-actions"></div>`);
     $('.back').onclick = () => streams(selectedVideo, false);
     const player = $('#player');
@@ -379,6 +490,45 @@
     if (favorites.length) cards(box, favorites);
     else box.textContent = 'Add titles to Favorites from their details.';
   }
+  function healthView() {
+    show('<h1>Add-on health</h1><p>Status reflects the latest request Splay made to each installed add-on. Retry failed requests here.</p><div id="health-list"></div>');
+    const list = $('#health-list');
+    if (!addons.length) {
+      list.textContent = 'No add-ons are installed.';
+      return;
+    }
+    addons.forEach(addon => {
+      const section = document.createElement('section'), heading = document.createElement('h2');
+      heading.textContent = addon.manifest.name || addon.transportUrl;
+      section.append(heading);
+      const records = [...addonHealth.values()].filter(record => record.addonId === addonKey(addon));
+      if (!records.length) {
+        const status = document.createElement('p');
+        status.textContent = 'No requests made yet.';
+        section.append(status);
+      }
+      records.forEach(record => {
+        const row = document.createElement('article'), title = document.createElement('h3'), status = document.createElement('p');
+        title.textContent = `${record.resource}: ${record.label}`;
+        status.textContent = `${record.state === 'checking' ? 'Checking…' : record.state === 'available' ? 'Available' : 'Failed'}${record.checkedAt ? ` · ${new Date(record.checkedAt).toLocaleTimeString()}` : ''}${record.message ? ` · ${record.message}` : ''}`;
+        row.append(title, status);
+        if (record.state === 'failed' && record.retry) {
+          const retry = document.createElement('button');
+          retry.className = 'quiet';
+          retry.textContent = 'Retry';
+          retry.onclick = async () => {
+            retry.disabled = true;
+            retry.textContent = 'Retrying…';
+            try { await record.retry(); } catch (_) { /* failure is shown in the refreshed health row */ }
+            healthView();
+          };
+          row.append(retry);
+        }
+        section.append(row);
+      });
+      list.append(section);
+    });
+  }
   function settings() {
     const value = prefs();
     show(`<h1>Playback settings</h1><section class="settings"><label>Highest quality <select id="height"><option value="2160">4K</option><option value="1080">1080p</option><option value="720">720p</option><option value="0">No limit</option></select></label><label><input id="hdr" type="checkbox"> Allow HDR / Dolby Vision</label><label><input id="prefer-hdr" type="checkbox"> Prefer HDR</label><label><input id="prefer-hevc" type="checkbox"> Prefer HEVC</label><label><input id="auto" type="checkbox"> Play best source automatically</label><button id="save">Save playback settings</button><button id="refresh" class="quiet">Refresh add-ons</button><button id="out" class="quiet">Sign out</button></section>`);
@@ -386,7 +536,31 @@
     $('#save').onclick = () => { savePrefs({ maxHeight: Number($('#height').value), allowHdr: $('#hdr').checked, preferHdr: $('#prefer-hdr').checked, preferHevc: $('#prefer-hevc').checked, autoPlay: $('#auto').checked }); $('#status').textContent = 'Saved'; setTimeout(() => $('#status').textContent = '', 1500); };
     $('#refresh').onclick = () => safe(async () => { await load(); addonView(); }); $('#out').onclick = () => { localStorage.removeItem('splay.authKey'); auth = null; addons = []; nav.classList.add('hidden'); link(); };
   }
-  nav.onclick = event => { const view = event.target.dataset.v; if (view) ({ home, search, favorites: favoriteView, addons: addonView, settings }[view])(); };
-  document.addEventListener('keydown', event => { if (event.keyCode === 461 && auth) home(); });
+  nav.onclick = event => { const view = event.target.dataset.v; if (view) ({ home, search, favorites: favoriteView, addons: addonView, health: healthView, settings }[view])(); };
+  document.addEventListener('keydown', event => {
+    if (event.keyCode === 461 && auth) { home(); return; }
+    const directions = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
+    const direction = directions[event.key] || ({ 37: 'left', 38: 'up', 39: 'right', 40: 'down' })[event.keyCode];
+    if (!direction || !app.contains(document.activeElement)) return;
+    if (document.activeElement.matches('select,textarea,input:not([type="checkbox"]),video')) return;
+    const current = document.activeElement.getBoundingClientRect();
+    const currentX = current.left + current.width / 2, currentY = current.top + current.height / 2;
+    const candidates = $$('button:not([disabled]),input[type="checkbox"]:not([disabled]),select:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])', app)
+      .filter(element => element !== document.activeElement && element.getClientRects().length)
+      .map(element => ({ element, rect: element.getBoundingClientRect() }))
+      .map(item => {
+        const x = item.rect.left + item.rect.width / 2, y = item.rect.top + item.rect.height / 2;
+        const primary = direction === 'left' ? currentX - x : direction === 'right' ? x - currentX : direction === 'up' ? currentY - y : y - currentY;
+        const secondary = direction === 'left' || direction === 'right' ? Math.abs(currentY - y) : Math.abs(currentX - x);
+        return Object.assign(item, { score: primary > 0 ? primary + secondary * 1.5 : Infinity });
+      })
+      .filter(item => Number.isFinite(item.score))
+      .sort((a, b) => a.score - b.score);
+    if (candidates.length) {
+      event.preventDefault();
+      candidates[0].element.focus();
+      candidates[0].element.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+  });
   auth ? safe(async () => { await load(); home(); }) : link();
 })();
