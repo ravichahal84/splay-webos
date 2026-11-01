@@ -13,7 +13,7 @@ An early, experimental webOS client for Stremio. It links a Stremio account with
 node tests/api.test.js
 node --check app/api.js && node --check app/app.js
 ares-package -o dist app
-ares-install --device <tv-name> dist/org.community.alder.webos_0.2.3_all.ipk
+ares-install --device <tv-name> dist/org.community.alder.webos_0.2.4_all.ipk
 ares-launch --device <tv-name> org.community.alder.webos
 ```
 
@@ -21,7 +21,7 @@ ares-launch --device <tv-name> org.community.alder.webos
 
 ## Homebrew distribution
 
-The repository is public. Add the `homebrew-repository.json` URL to Homebrew Channel to use this custom catalogue. Its package manifest and IPK are hosted under `homebrew/` as public raw GitHub files. Version 0.2.3 is an experimental preview; playback and add-on compatibility have not yet been verified on the target TVs. Do not enter a Stremio password on the TV; account linking uses Stremio's one-time code flow.
+The repository is public. Add the `homebrew-repository.json` URL to Homebrew Channel to use this custom catalogue. Its package manifest and IPK are hosted under `homebrew/` as public raw GitHub files. Version 0.2.4 is an experimental preview; playback and add-on compatibility have not yet been verified on the target TVs. Do not enter a Stremio password on the TV; account linking uses Stremio's one-time code flow.
 
 ## Device testing
 
