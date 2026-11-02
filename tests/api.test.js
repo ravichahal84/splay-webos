@@ -5,9 +5,11 @@ assert.equal(typeof api.createLink, 'function');
 assert.equal(typeof api.catalog, 'function');
 assert.equal(typeof api.streams, 'function');
 assert.equal(typeof api.subtitles, 'function');
+assert.equal(typeof api.library, 'function');
 assert.equal(typeof api.filterSubtitles, 'function');
 assert.equal(typeof api.orderEpisodes, 'function');
 assert.equal(typeof api.audioLanguages, 'function');
+assert.equal(typeof api.audioLanguageCode, 'function');
 assert.equal(typeof api.rankStreams, 'function');
 assert.equal(api.isHttpUrl('javascript:alert(1)'), false);
 assert.equal(api.isHttpUrl('https://example.test/video.mp4'), true);
@@ -33,6 +35,11 @@ function testAudioLanguagePreferences() {
   assert.deepEqual(api.audioLanguages({ audio: [{ language: 'Hindi' }] }), ['hin']);
   assert.deepEqual(api.audioLanguages({ name: 'Penguin movie' }), []);
   assert.deepEqual(api.audioLanguages({ name: 'French 4K' }), ['fra']);
+  assert.equal(api.audioLanguageCode('eng'), 'eng');
+  assert.equal(api.audioLanguageCode('English (United States)'), 'eng');
+  assert.equal(api.audioLanguageCode('Hindi'), 'hin');
+  assert.equal(api.audioLanguageCode('pa'), 'pan');
+  assert.equal(api.audioLanguageCode('unknown'), '');
   const preferred = api.rankStreams(streams, { preferredAudioLanguages: ['eng', 'hin', 'pan'] });
   assert.deepEqual(preferred.map(stream => stream.url), [
     'https://example.test/english.mkv',
@@ -89,6 +96,21 @@ async function testSubtitleLookup() {
   }
 }
 
+async function testStremioLibrary() {
+  const originalFetch = global.fetch;
+  try {
+    global.fetch = async (url, options) => {
+      assert.equal(url, 'https://api.strem.io/api/libraryGet');
+      assert.equal(options.method, 'POST');
+      assert.deepEqual(JSON.parse(options.body), { type: 'LibraryGet', authKey: 'test-auth' });
+      return { ok: true, json: async () => ({ result: [{ item: { id: 'tt123', type: 'movie', name: 'Example' } }] }) };
+    };
+    assert.deepEqual(await api.library('test-auth'), [{ item: { id: 'tt123', type: 'movie', name: 'Example' } }]);
+  } finally {
+    global.fetch = originalFetch;
+  }
+}
+
 function testSubtitleLanguageFilter() {
   const subtitles = [
     { lang: 'eng', url: 'https://subs.example/one.vtt' },
@@ -111,7 +133,7 @@ function testEpisodeOrdering() {
   assert.deepEqual(api.orderEpisodes(episodes).slice(3, 5), [{ id: 's2e1', season: 2, episode: 1 }, { id: 's2e2', season: 2, episode: 2 }]);
 }
 
-Promise.all([testCatalogSearchPath(), testSubtitleLookup()]).then(() => {
+Promise.all([testCatalogSearchPath(), testSubtitleLookup(), testStremioLibrary()]).then(() => {
   testAudioLanguagePreferences();
   testSubtitleLanguageFilter();
   testEpisodeOrdering();

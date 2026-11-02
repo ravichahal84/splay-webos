@@ -7,8 +7,11 @@
   const historyKey = 'splay.history';
   const favoritesKey = 'splay.favorites';
   const subtitleLanguagesKey = 'splay.subtitleLanguages';
+  const catalogVisibilityKey = 'splay.catalogVisibility';
   const progressKey = id => 'splay.progress:' + String(id);
   let nextEpisodeTimer = null, nextEpisodeInterval = null, subtitleObjectUrls = [];
+  let browseView = () => home();
+  let searchState = { query: '', type: 'all', addon: 'all' };
   const readHistory = () => { try { const value = JSON.parse(localStorage.getItem(historyKey) || '[]'); return Array.isArray(value) ? value.slice(0, 8) : []; } catch (_) { return []; } };
   const readFavorites = () => { try { const value = JSON.parse(localStorage.getItem(favoritesKey) || '[]'); return Array.isArray(value) ? value.slice(0, 50) : []; } catch (_) { return []; } };
   const readSubtitleLanguages = () => {
@@ -20,6 +23,19 @@
     } catch (_) { return null; }
   };
   const isFavorite = item => readFavorites().some(value => value.id === item.id);
+  const catalogKey = (addon, catalog) => JSON.stringify([addonKey(addon), catalog.type, catalog.id]);
+  const readCatalogVisibility = () => {
+    try {
+      const value = localStorage.getItem(catalogVisibilityKey);
+      if (value === null) return null;
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.filter(key => typeof key === 'string') : null;
+    } catch (_) { return null; }
+  };
+  const catalogVisible = (addon, catalog) => {
+    const visible = readCatalogVisibility();
+    return visible === null || visible.includes(catalogKey(addon, catalog));
+  };
   const toggleFavorite = item => {
     const favorites = readFavorites();
     const updated = isFavorite(item)
@@ -105,7 +121,7 @@
     });
   }
   function rows() {
-    return addons.flatMap(addon => (addon.manifest.catalogs || []).filter(catalog => catalog.type && catalog.id).slice(0, 3).map(catalog => ({ addon, catalog }))).slice(0, 10);
+    return addons.flatMap(addon => (addon.manifest.catalogs || []).filter(catalog => catalog.type && catalog.id && catalogVisible(addon, catalog)).slice(0, 3).map(catalog => ({ addon, catalog }))).slice(0, 10);
   }
   async function link() {
     show('<section class="center"><h1>Link your Stremio account</h1><p>Splay uses Stremio’s TV linking page. Your Stremio password is never entered or stored on this TV.</p><button id="link">Create link code</button><div id="code"></div></section>');
@@ -138,16 +154,26 @@
     $('#hero-play').onclick = () => details(item, true); $('#hero-info').onclick = () => details(item);
   }
   function search() {
-    show('<h1>Search</h1><form id="search"><input placeholder="Title" autocomplete="off"><button>Search</button></form><div id="result" class="cards"></div>');
+    const addonOptions = addons.filter(addon => (addon.manifest.catalogs || []).some(catalog => catalogVisible(addon, catalog)))
+      .map(addon => `<option value="${e(addonKey(addon))}">${e(addon.manifest.name || addon.transportUrl)}</option>`).join('');
+    show(`<h1>Search</h1><form id="search" class="search-form"><input id="search-query" placeholder="Title" autocomplete="off"><select id="search-type" aria-label="Media type"><option value="all">Movies and series</option><option value="movie">Movies</option><option value="series">Series</option></select><select id="search-addon" aria-label="Search catalogue"><option value="all">All catalogues</option>${addonOptions}</select><button>Search</button></form><div id="result" class="cards"></div>`);
+    $('#search-query').value = searchState.query;
+    $('#search-type').value = searchState.type;
+    $('#search-addon').value = searchState.addon;
     $('#search').onsubmit = event => { event.preventDefault(); safe(async () => {
-      const query = $('input', app).value.trim(); if (!query) return;
+      const query = $('#search-query').value.trim();
+      searchState = { query, type: $('#search-type').value, addon: $('#search-addon').value };
+      if (!query) return;
       const searchable = addons.flatMap(addon => (addon.manifest.catalogs || [])
-        .filter(catalog => catalog.type && catalog.id && (catalog.extra || catalog.extraSupported || []).some(extra => (extra.name || extra) === 'search'))
+        .filter(catalog => catalog.type && catalog.id && catalogVisible(addon, catalog)
+          && (searchState.type === 'all' || catalog.type === searchState.type)
+          && (searchState.addon === 'all' || addonKey(addon) === searchState.addon)
+          && (catalog.extra || catalog.extraSupported || []).some(extra => (extra.name || extra) === 'search'))
         .map(catalog => ({ addon, catalog })));
       const box = $('#result');
       box.innerHTML = '';
       if (!searchable.length) {
-        box.textContent = 'No installed add-ons provide title search. Add a search-enabled catalogue in Stremio.';
+        box.textContent = 'No visible catalogues match these search filters. Enable catalogues in Add-ons or install a search-enabled catalogue in Stremio.';
         return;
       }
       const results = await Promise.all(searchable.map(async item => {
@@ -170,6 +196,7 @@
         ? 'Search failed for all search-enabled add-ons. Check your connection and add-on availability.'
         : `No results found for “${query}”.`;
     }); };
+    if (searchState.query) $('#search').onsubmit({ preventDefault() {} });
   }
   async function details(item, playImmediately, episodeId) {
     const target = item.seriesId
@@ -185,7 +212,7 @@
   function renderDetails(playImmediately, episodeId, restoreEpisodeFocus) {
     const meta = selected, backdrop = image(meta, 'background'), poster = image(meta, 'poster');
     show(`<section class="detail" style="--backdrop:url('${e(backdrop)}')"><img src="${e(poster)}" alt=""><div><button class="back">← Back</button> <button class="quiet" id="favorite">${isFavorite(meta) ? 'Remove from favorites' : 'Add to favorites'}</button>${meta.logo ? `<img class="detail-logo" src="${e(meta.logo)}" alt="${e(meta.name)}">` : ''}<h1>${e(meta.name)}</h1><p>${e([meta.year, (meta.genres || []).join(', '), meta.imdbRating && 'IMDb ' + meta.imdbRating].filter(Boolean).join(' · '))}</p><p>${e(meta.description || 'No description provided.')}</p><div id="episodes"></div><button id="best">Play best source</button> <button class="quiet" id="sources">Choose source</button></div></section>`);
-    $('.back').onclick = home;
+    $('.back').onclick = browseView;
     $('#favorite').onclick = () => {
       toggleFavorite(meta);
       $('#favorite').textContent = isFavorite(meta) ? 'Remove from favorites' : 'Add to favorites';
@@ -230,6 +257,91 @@
     if (playImmediately) streams(selectedVideo, true);
   }
   function $$(selector, root = document) { return [...root.querySelectorAll(selector)]; }
+  function setupAudioTrackSelector(player) {
+    const status = $('#audio-track-status'), select = $('#audio-track-select');
+    let tracks;
+    try { tracks = player.audioTracks; } catch (_) { tracks = null; }
+    if (!tracks) {
+      status.textContent = 'This TV player does not expose audio track selection. Choose a source with your preferred language.';
+      select.disabled = true;
+      return;
+    }
+    let defaultChecked = false, changingTracks = false;
+    const refresh = () => {
+      const count = Number(tracks.length) || 0;
+      select.innerHTML = '';
+      select.disabled = count === 0;
+      if (!count) {
+        status.textContent = 'No selectable audio tracks are exposed by this source or TV player.';
+        return;
+      }
+      let activeIndex = -1, englishIndex = -1;
+      for (let index = 0; index < count; index += 1) {
+        const track = tracks[index];
+        const language = track.language || track.lang || '';
+        const label = track.label || language || `Audio track ${index + 1}`;
+        const option = document.createElement('option');
+        option.value = String(index);
+        option.textContent = `${label}${language && label !== language ? ` (${language})` : ''}`;
+        select.append(option);
+        if (track.enabled) activeIndex = index;
+        if (englishIndex < 0 && SplayApi.audioLanguageCode(`${language} ${label}`) === 'eng') englishIndex = index;
+      }
+      if (!defaultChecked) {
+        defaultChecked = true;
+        if (englishIndex >= 0) {
+          const previous = [];
+          for (let index = 0; index < count; index += 1) previous.push(Boolean(tracks[index].enabled));
+          try {
+            tracks[englishIndex].enabled = true;
+            for (let index = 0; index < count; index += 1) if (index !== englishIndex) tracks[index].enabled = false;
+            if (!tracks[englishIndex].enabled) throw Error('Audio track selection is not supported.');
+            activeIndex = englishIndex;
+            status.textContent = 'English audio selected automatically.';
+          } catch (_) {
+            previous.forEach((enabled, index) => {
+              try { tracks[index].enabled = enabled; } catch (_) { /* preserve playback if track switching is unsupported */ }
+            });
+            status.textContent = 'English audio is available, but this TV could not switch tracks. Try the player controls or choose another source.';
+          }
+        } else {
+          status.textContent = `${count} audio track${count === 1 ? '' : 's'} available. Choose your preferred track.`;
+        }
+      }
+      select.value = String(activeIndex >= 0 ? activeIndex : 0);
+    };
+    select.onchange = () => {
+      const chosenIndex = Number(select.value);
+      if (!Number.isInteger(chosenIndex) || chosenIndex < 0 || chosenIndex >= tracks.length) return;
+      const previous = [];
+      for (let index = 0; index < tracks.length; index += 1) previous.push(Boolean(tracks[index].enabled));
+      try {
+        changingTracks = true;
+        tracks[chosenIndex].enabled = true;
+        for (let index = 0; index < tracks.length; index += 1) if (index !== chosenIndex) tracks[index].enabled = false;
+        if (!tracks[chosenIndex].enabled) throw Error('Audio track selection is not supported.');
+        status.textContent = `${select.options[chosenIndex].textContent} selected.`;
+      } catch (_) {
+        previous.forEach((enabled, index) => {
+          try { tracks[index].enabled = enabled; } catch (_) { /* preserve playback if track switching is unsupported */ }
+        });
+        refresh();
+        status.textContent = 'This TV could not switch audio tracks. Playback will continue with the current track.';
+      } finally {
+        changingTracks = false;
+      }
+    };
+    try {
+      tracks.addEventListener('addtrack', refresh);
+      tracks.addEventListener('removetrack', refresh);
+      tracks.addEventListener('change', () => { if (!changingTracks) refresh(); });
+    } catch (_) { /* event support is optional; metadata events still refresh the list */ }
+    try {
+      player.addEventListener('loadedmetadata', refresh);
+      player.addEventListener('canplay', refresh);
+    } catch (_) { /* audio controls are optional; leave video playback untouched */ }
+    refresh();
+  }
   function streamLabel(stream) {
     const info = stream.splay || SplayApi.details(stream), audioLanguages = { eng: 'English audio', hin: 'Hindi audio', pan: 'Punjabi audio' };
     const format = [info.height && info.height + 'p', info.hdr && 'HDR', info.hevc && 'HEVC', info.audio && 'surround audio', ...(info.audioLanguages || []).map(language => audioLanguages[language])].filter(Boolean).join(' · ');
@@ -453,12 +565,22 @@
     }
     const stream = queue[index], label = streamLabel(stream);
     addToHistory(selectedVideo, selected);
-    show(`<button class="back">← Back</button><h1>${e(selectedVideo.name || selected.name)}</h1><p id="playing">Starting ${e(label)}…</p><video id="player" controls autoplay src="${e(stream.url)}">This stream is not supported by the TV.</video><section class="subtitle-controls"><h2>Subtitles</h2><p id="subtitle-status">Looking for subtitles…</p><div id="subtitle-options" class="subtitle-options"></div></section><div id="player-actions"></div>`);
+    show(`<button class="back">← Back</button><h1>${e(selectedVideo.name || selected.name)}</h1><p id="playing">Starting ${e(label)}…</p><video id="player" controls autoplay src="${e(stream.url)}">This stream is not supported by the TV.</video><section class="playback-progress"><progress id="playback-progress" max="1" value="0" aria-label="Playback progress"></progress><span id="playback-progress-text">0:00 / --:--</span></section><details class="player-options" open><summary>Audio, subtitles & episode controls</summary><section class="subtitle-controls audio-controls"><h2>Audio language</h2><p id="audio-track-status">Checking audio tracks…</p><select id="audio-track-select" aria-label="Audio language"></select></section><section class="subtitle-controls"><h2>Subtitles</h2><p id="subtitle-status">Looking for subtitles…</p><div id="subtitle-options" class="subtitle-options"></div></section><div id="player-actions"></div></details>`);
     $('.back').onclick = () => streams(selectedVideo, false);
     const player = $('#player');
     let lastSaved = 0;
-    player.onloadedmetadata = () => { if (startAt > 0 && startAt < player.duration - 15) player.currentTime = startAt; };
+    setupAudioTrackSelector(player);
+    const progress = $('#playback-progress'), progressText = $('#playback-progress-text');
+    player.onloadedmetadata = () => {
+      if (Number.isFinite(player.duration) && player.duration > 0) progress.max = player.duration;
+      if (startAt > 0 && startAt < player.duration - 15) player.currentTime = startAt;
+    };
     player.ontimeupdate = () => {
+      if (Number.isFinite(player.duration) && player.duration > 0) {
+        progress.max = player.duration;
+        progress.value = player.currentTime;
+        progressText.textContent = `${formatTime(player.currentTime)} / ${formatTime(player.duration)}`;
+      }
       if (player.currentTime - lastSaved >= 10) { lastSaved = player.currentTime; saveProgress(id, player.currentTime); }
     };
     player.onpause = () => { if (player.currentTime > 0) saveProgress(id, player.currentTime); };
@@ -490,13 +612,75 @@
     const actions = $('#player-actions');
     if (index + 1 < queue.length) { const next = document.createElement('button'); next.className = 'quiet'; next.textContent = 'Try next source'; next.onclick = () => playQueue(queue, index + 1, player.currentTime || startAt); actions.append(next); }
   }
-  function addonView() { show('<h1>Your add-ons</h1>' + addons.map(addon => `<article><h2>${e(addon.manifest.name)}</h2><p>${e(addon.manifest.description || addon.transportUrl)}</p></article>`).join('')); }
+  function addonView() {
+    show(`<h1>Your add-ons</h1><p>Choose which installed catalogues appear on Home and in Search. To install or remove add-ons, manage them in Stremio.</p><div id="addon-catalogues"></div><button id="save-catalogues">Save catalogue selection</button> <button id="all-catalogues" class="quiet">Show all catalogues</button> <button id="refresh-addons" class="quiet">Refresh from Stremio</button>`);
+    const list = $('#addon-catalogues'), visible = readCatalogVisibility();
+    if (!addons.length) list.textContent = 'No add-ons are installed.';
+    addons.forEach(addon => {
+      const catalogs = (addon.manifest.catalogs || []).filter(catalog => catalog.type && catalog.id);
+      const section = document.createElement('section'), heading = document.createElement('h2'), description = document.createElement('p');
+      heading.textContent = addon.manifest.name || addon.transportUrl;
+      description.textContent = addon.manifest.description || addon.transportUrl;
+      section.className = 'addon-settings';
+      section.append(heading, description);
+      if (!catalogs.length) {
+        const note = document.createElement('p');
+        note.textContent = 'This add-on does not provide catalogues.';
+        section.append(note);
+      }
+      catalogs.forEach(catalog => {
+        const label = document.createElement('label'), checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'catalog-visibility';
+        checkbox.value = catalogKey(addon, catalog);
+        checkbox.checked = visible === null || visible.includes(checkbox.value);
+        label.append(checkbox, document.createTextNode(`${catalog.name || catalog.id} · ${catalog.type}`));
+        section.append(label);
+      });
+      list.append(section);
+    });
+    $('#save-catalogues').onclick = () => {
+      const selected = $$('.catalog-visibility', list).filter(input => input.checked).map(input => input.value);
+      if (selected.length === $$('.catalog-visibility', list).length) localStorage.removeItem(catalogVisibilityKey);
+      else localStorage.setItem(catalogVisibilityKey, JSON.stringify(selected));
+      $('#status').textContent = 'Catalogue selection saved.';
+      setTimeout(() => { if ($('#status').textContent === 'Catalogue selection saved.') $('#status').textContent = ''; }, 1800);
+    };
+    $('#all-catalogues').onclick = () => {
+      localStorage.removeItem(catalogVisibilityKey);
+      $$('.catalog-visibility', list).forEach(input => { input.checked = true; });
+      $('#status').textContent = 'All catalogues shown.';
+    };
+    $('#refresh-addons').onclick = () => safe(async () => { await load(); addonView(); });
+  }
   function favoriteView() {
     const favorites = readFavorites();
     show('<h1>Favorites</h1><div id="favorite-list" class="cards"></div>');
     const box = $('#favorite-list');
     if (favorites.length) cards(box, favorites);
     else box.textContent = 'Add titles to Favorites from their details.';
+  }
+  async function libraryView() {
+    show('<h1>Stremio library</h1><p>Loading titles saved to your Stremio account…</p><div id="library-list" class="cards"></div>');
+    await safe(async () => {
+      const entries = await SplayApi.library(auth);
+      const items = entries.map(entry => {
+        const item = entry && (entry.item || entry), meta = item && (item.meta || item);
+        if (!meta) return null;
+        const id = meta.id || meta._id || item.id || entry.id || meta.imdb_id;
+        if (!id) return null;
+        return {
+          id,
+          type: meta.type || item.type || entry.type || 'movie',
+          name: meta.name || item.name || entry.name || String(id),
+          poster: meta.poster || item.poster || '',
+          background: meta.background || item.background || ''
+        };
+      }).filter(Boolean);
+      const list = $('#library-list');
+      if (items.length) cards(list, items);
+      else list.textContent = 'Your Stremio library is empty.';
+    });
   }
   function healthView() {
     show('<h1>Add-on health</h1><p>Status reflects the latest request Splay made to each installed add-on. Retry failed requests here.</p><div id="health-list"></div>');
@@ -546,16 +730,32 @@
     $('#save').onclick = () => { savePrefs({ maxHeight: Number($('#height').value), allowHdr: $('#hdr').checked, preferHdr: $('#prefer-hdr').checked, preferHevc: $('#prefer-hevc').checked, autoPlay: $('#auto').checked, preferredAudioLanguages: $$('.audio-language').filter(input => input.checked).map(input => input.value) }); $('#status').textContent = 'Saved'; setTimeout(() => $('#status').textContent = '', 1500); };
     $('#refresh').onclick = () => safe(async () => { await load(); addonView(); }); $('#out').onclick = () => { localStorage.removeItem('splay.authKey'); auth = null; addons = []; nav.classList.add('hidden'); link(); };
   }
-  nav.onclick = event => { const view = event.target.dataset.v; if (view) ({ home, search, favorites: favoriteView, addons: addonView, health: healthView, settings }[view])(); };
+  nav.onclick = event => {
+    const view = event.target.dataset.v;
+    if (!view) return;
+    const views = { home, search, library: libraryView, favorites: favoriteView, addons: addonView, health: healthView, settings };
+    browseView = views[view] || home;
+    browseView();
+  };
   document.addEventListener('keydown', event => {
-    if (event.keyCode === 461 && auth) { home(); return; }
+    if (event.keyCode === 461 || event.key === 'Escape' || (event.key === 'Backspace' && !document.activeElement.matches('input,textarea'))) {
+      const back = $('.back', app) || $('#back', app) || $('#cancel-next', app);
+      if (back) back.click();
+      else if (auth) {
+        browseView = home;
+        home();
+      }
+      else link();
+      event.preventDefault();
+      return;
+    }
     const directions = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
     const direction = directions[event.key] || ({ 37: 'left', 38: 'up', 39: 'right', 40: 'down' })[event.keyCode];
     if (!direction || (!app.contains(document.activeElement) && !nav.contains(document.activeElement))) return;
     if (document.activeElement.matches('select,textarea,input:not([type="checkbox"]),video')) return;
     const current = document.activeElement.getBoundingClientRect();
     const currentX = current.left + current.width / 2, currentY = current.top + current.height / 2;
-    const selector = 'button:not([disabled]),input[type="checkbox"]:not([disabled]),select:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])';
+    const selector = 'button:not([disabled]),input[type="checkbox"]:not([disabled]),select:not([disabled]),summary,a[href],[tabindex]:not([tabindex="-1"])';
     const candidates = $$(selector, app).concat($$(selector, nav))
       .filter(element => element !== document.activeElement && element.getClientRects().length)
       .map(element => ({ element, rect: element.getBoundingClientRect() }))

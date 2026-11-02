@@ -37,7 +37,7 @@
   const audioLanguagePatterns = [
     ['eng', /(?:^|[^a-z])(?:english|eng|en)(?=$|[^a-z])/i],
     ['hin', /(?:^|[^a-z])(?:hindi|hin)(?=$|[^a-z])/i],
-    ['pan', /(?:^|[^a-z])(?:punjabi|panjabi|pan|pun)(?=$|[^a-z])/i],
+    ['pan', /(?:^|[^a-z])(?:punjabi|panjabi|pan|pun|pa)(?=$|[^a-z])/i],
     ['spa', /(?:^|[^a-z])(?:spanish|spa|es)(?=$|[^a-z])/i],
     ['fra', /(?:^|[^a-z])(?:french|fra|fre|fr)(?=$|[^a-z])/i],
     ['deu', /(?:^|[^a-z])(?:german|deu|ger|de)(?=$|[^a-z])/i],
@@ -71,6 +71,11 @@
     const text = streamText(stream);
     return audioLanguagePatterns.filter(([, pattern]) => pattern.test(text)).map(([language]) => language);
   };
+  const audioLanguageCode = value => {
+    const text = String(value || '').trim().toLowerCase();
+    const match = audioLanguagePatterns.find(([, pattern]) => pattern.test(text));
+    return match ? match[0] : '';
+  };
   function details(stream) {
     const label = streamText(stream), height = stream.height || fromText(label, /(?:^|\D)(2160|1080|720|576|480)p(?:\D|$)/i), size = stream.size || stream.videoSize || fromText(label, /(?:^|\s)([\d.]+)\s*(?:gb|gib)/i) * 1073741824 || fromText(label, /(?:^|\s)([\d.]+)\s*(?:mb|mib)/i) * 1048576;
     return { height, size, hdr: /\b(?:hdr10\+?|dolby vision|\bdv\b|hlg)\b/i.test(label), hevc: /\b(?:hevc|h\.?(?:265)|x265)\b/i.test(label), awkward: /\b(?:cam|telesync|\bts\b|screener|3d|hardcoded|hc\b)\b/i.test(label), audio: /\b(?:atmos|truehd|dts(?:-hd)?|5\.1|7\.1)\b/i.test(label), audioLanguages: audioLanguages(stream) };
@@ -99,6 +104,12 @@
     async createLink() { const value = await get(LINK + 'create?type=Create'); return { code: value.code, url: value.link }; },
     async readLink(code) { try { return (await get(LINK + 'read?type=Read&code=' + encodeURIComponent(code))).authKey || null; } catch (error) { if (/101/.test(error.message)) return null; throw error; } },
     async addons(authKey) { return (await core('addonCollectionGet', { type: 'AddonCollectionGet', authKey, update: true })).addons || []; },
+    async library(authKey) {
+      const result = await core('libraryGet', { type: 'LibraryGet', authKey });
+      if (Array.isArray(result)) return result;
+      if (result && Array.isArray(result.items)) return result.items;
+      throw Error('Stremio returned an unexpected library response.');
+    },
     async catalog(addon, type, id, extra) { return (await get(addonUrl(addon, 'catalog', type, id, extra))).metas || []; },
     async streams(addon, type, id) { return ((await get(addonUrl(addon, 'stream', type, id))).streams || []).filter(stream => stream && isHttpUrl(stream.url) && !stream.infoHash); },
     async subtitles(addon, type, id) { return ((await get(addonUrl(addon, 'subtitles', type, id))).subtitles || []).filter(subtitle => subtitle && isHttpUrl(subtitle.url)); },
@@ -106,7 +117,7 @@
       for (const addon of addons.filter(addon => supports(addon, 'meta', type, id))) try { const meta = (await get(addonUrl(addon, 'meta', type, id))).meta; if (meta) return meta; } catch (_) { /* try next add-on */ }
       try { return (await get(`${CINEMETA}meta/${part(type)}/${part(id)}.json`)).meta || null; } catch (_) { return null; }
     },
-    supports, rankStreams, details, audioLanguages, subtitleLanguage, filterSubtitles, orderEpisodes, isHttpUrl, normalizeUrl,
+    supports, rankStreams, details, audioLanguages, audioLanguageCode, subtitleLanguage, filterSubtitles, orderEpisodes, isHttpUrl, normalizeUrl,
     image(value, kind) { if (!value) return ''; const source = String(value).trim(); if (source.startsWith('http')) return normalizeUrl(source); return `https://images.metahub.space/${kind || 'poster'}/large/${part(source.split(':')[0])}/img`; }
   };
   if (typeof module !== 'undefined') module.exports = api;
