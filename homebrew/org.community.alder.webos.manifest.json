@@ -1,15 +1,15 @@
 {
   "id": "org.community.alder.webos",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "type": "web",
   "title": "Splay",
   "appDescription": "Experimental Splay webOS media-server launcher.",
   "iconUri": "https://raw.githubusercontent.com/ravichahal84/splay-webos/main/app/largeIcon.png",
   "sourceUrl": "https://github.com/ravichahal84/splay-webos",
   "rootRequired": false,
-  "ipkUrl": "https://github.com/ravichahal84/splay-webos/releases/download/v0.2.10/org.community.alder.webos_0.2.10_all.ipk",
+  "ipkUrl": "https://github.com/ravichahal84/splay-webos/releases/download/v0.2.11/org.community.alder.webos_0.2.11_all.ipk",
   "ipkHash": {
-    "sha256": "c250b9aa8097184177421ac9d8f40dce19238def196efdb8b0b11745e7220f4c"
+    "sha256": "7a0a5c5f23c650c806eb50ab18719e20b6ee3956486b0bd3f186d782cb1071c3"
   },
-  "ipkSize": 16014
+  "ipkSize": 18134
 }
