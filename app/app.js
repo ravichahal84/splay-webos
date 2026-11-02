@@ -104,7 +104,7 @@
   const homeSectionsMarkup = () => {
     const continuing = readHistory().filter(item => readProgress(item.episodeId || item.id) > 15);
     const favorites = readFavorites();
-    return `${favorites.length ? '<section><h2>Favorites</h2><div id="favorites" class="cards"></div></section>' : ''}${continuing.length ? '<section><h2>Continue watching</h2><div id="history" class="cards"></div></section>' : ''}`;
+    return `${favorites.length ? '<section><h2>Favorites</h2><div id="favorites" class="cards"></div></section>' : ''}${continuing.length ? '<section><h2>Continue watching</h2><div id="history" class="cards"></div></section>' : ''}<section class="discovery-row"><h2>New Bollywood movies</h2><div id="bollywood-movies" class="cards"><p>Searching your movie catalogues…</p></div></section><section class="discovery-row"><h2>New Bollywood series</h2><div id="bollywood-series" class="cards"><p>Searching your series catalogues…</p></div></section>`;
   };
   function showHomeSections() {
     const box = $('#history');
@@ -122,6 +122,36 @@
   }
   function rows() {
     return addons.flatMap(addon => (addon.manifest.catalogs || []).filter(catalog => catalog.type && catalog.id && catalogVisible(addon, catalog)).slice(0, 3).map(catalog => ({ addon, catalog }))).slice(0, 10);
+  }
+  async function loadBollywoodRow(type) {
+    const target = $(`#bollywood-${type === 'movie' ? 'movies' : 'series'}`);
+    if (!target) return;
+    const catalogues = addons.flatMap(addon => (addon.manifest.catalogs || [])
+      .filter(catalog => catalog.type === type && catalog.id && catalogVisible(addon, catalog)
+        && (catalog.extra || catalog.extraSupported || []).some(extra => (extra.name || extra) === 'search'))
+      .map(catalog => ({ addon, catalog }))).slice(0, 4);
+    if (!catalogues.length) {
+      target.textContent = `No visible ${type} catalogues support search. Enable a catalogue in Add-ons or install one in Stremio.`;
+      return;
+    }
+    const queries = ['Bollywood', 'Hindi', 'Indian'];
+    const results = await Promise.all(catalogues.flatMap(item => queries.map(async query => {
+      try {
+        return await trackedAddonRequest(item.addon, 'catalog', `${item.catalog.name || item.catalog.id} search: ${query}`,
+          () => SplayApi.catalog(item.addon, type, item.catalog.id, { search: query }));
+      } catch (_) {
+        return [];
+      }
+    })));
+    if (!target.isConnected) return;
+    const unique = new Map();
+    results.flat().filter(meta => meta && meta.id).forEach(meta => {
+      if (!unique.has(meta.id)) unique.set(meta.id, Object.assign({}, meta, { type: meta.type || type }));
+    });
+    const recent = SplayApi.sortRecent([...unique.values()]);
+    target.innerHTML = '';
+    if (recent.length) cards(target, recent);
+    else target.textContent = `No Bollywood, Hindi, or Indian ${type === 'movie' ? 'movies' : 'series'} found in your search-enabled catalogues.`;
   }
   async function link() {
     show('<section class="center"><h1>Link your Stremio account</h1><p>Splay uses Stremio’s TV linking page. Your Stremio password is never entered or stored on this TV.</p><button id="link">Create link code</button><div id="code"></div></section>');
@@ -143,6 +173,8 @@
       const box = $('#rows'); box.innerHTML = homeSectionsMarkup() + result.map((item, index) => `<section><h2>${e(item.catalog.name || item.catalog.id)} <small>${e(item.addon.manifest.name)}</small></h2><div class="cards" id="row-${index}"></div></section>`).join('');
       showHomeSections();
       result.forEach((item, index) => cards($(`#row-${index}`), item.metas));
+      loadBollywoodRow('movie');
+      loadBollywoodRow('series');
     });
   }
   async function paintHero(item) {
@@ -664,19 +696,7 @@
     show('<h1>Stremio library</h1><p>Loading titles saved to your Stremio account…</p><div id="library-list" class="cards"></div>');
     await safe(async () => {
       const entries = await SplayApi.library(auth);
-      const items = entries.map(entry => {
-        const item = entry && (entry.item || entry), meta = item && (item.meta || item);
-        if (!meta) return null;
-        const id = meta.id || meta._id || item.id || entry.id || meta.imdb_id;
-        if (!id) return null;
-        return {
-          id,
-          type: meta.type || item.type || entry.type || 'movie',
-          name: meta.name || item.name || entry.name || String(id),
-          poster: meta.poster || item.poster || '',
-          background: meta.background || item.background || ''
-        };
-      }).filter(Boolean);
+      const items = SplayApi.libraryMetas(entries);
       const list = $('#library-list');
       if (items.length) cards(list, items);
       else list.textContent = 'Your Stremio library is empty.';

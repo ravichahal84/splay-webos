@@ -6,8 +6,10 @@ assert.equal(typeof api.catalog, 'function');
 assert.equal(typeof api.streams, 'function');
 assert.equal(typeof api.subtitles, 'function');
 assert.equal(typeof api.library, 'function');
+assert.equal(typeof api.libraryMetas, 'function');
 assert.equal(typeof api.filterSubtitles, 'function');
 assert.equal(typeof api.orderEpisodes, 'function');
+assert.equal(typeof api.sortRecent, 'function');
 assert.equal(typeof api.audioLanguages, 'function');
 assert.equal(typeof api.audioLanguageCode, 'function');
 assert.equal(typeof api.rankStreams, 'function');
@@ -111,6 +113,18 @@ async function testStremioLibrary() {
   }
 }
 
+function testStremioLibraryItemNormalization() {
+  const entries = [
+    { _id: 'internal-id-1', type: 'movie', item: { imdb_id: 'tt123', name: 'Film', poster: 'https://img.example/film.jpg' } },
+    { id: 'catalog:series:1', type: 'series', name: 'Show' },
+    { _id: 'internal-id-only', type: 'movie', name: 'No external id' }
+  ];
+  assert.deepEqual(api.libraryMetas(entries), [
+    { id: 'tt123', type: 'movie', name: 'Film', poster: 'https://img.example/film.jpg', background: '' },
+    { id: 'catalog:series:1', type: 'series', name: 'Show', poster: '', background: '' }
+  ]);
+}
+
 function testSubtitleLanguageFilter() {
   const subtitles = [
     { lang: 'eng', url: 'https://subs.example/one.vtt' },
@@ -133,10 +147,23 @@ function testEpisodeOrdering() {
   assert.deepEqual(api.orderEpisodes(episodes).slice(3, 5), [{ id: 's2e1', season: 2, episode: 1 }, { id: 's2e2', season: 2, episode: 2 }]);
 }
 
+function testRecentCatalogueOrdering() {
+  const metas = [
+    { id: 'old', year: '2019' },
+    { id: 'new', releaseInfo: '2025-08-01' },
+    { id: 'unknown', name: 'No release date' },
+    { id: 'same-year', year: 2025 }
+  ];
+  assert.deepEqual(api.sortRecent(metas).map(meta => meta.id), ['new', 'same-year', 'old', 'unknown']);
+  assert.deepEqual(api.sortRecent([{ id: 'first', year: 2024 }, { id: 'second', year: '2024' }]).map(meta => meta.id), ['first', 'second']);
+}
+
 Promise.all([testCatalogSearchPath(), testSubtitleLookup(), testStremioLibrary()]).then(() => {
   testAudioLanguagePreferences();
   testSubtitleLanguageFilter();
   testEpisodeOrdering();
+  testRecentCatalogueOrdering();
+  testStremioLibraryItemNormalization();
   console.log('API tests passed');
 }).catch(error => {
   console.error(error);

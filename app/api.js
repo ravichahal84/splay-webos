@@ -100,6 +100,24 @@
       || (Number(a.video.episode) || 0) - (Number(b.video.episode) || 0)
       || a.index - b.index)
     .map(item => item.video);
+  const sortRecent = metas => (metas || []).map((meta, index) => {
+    const value = String(meta.year || meta.releaseInfo || meta.released || '');
+    const match = value.match(/(?:19|20)\d{2}/);
+    return { meta, index, year: match ? Number(match[0]) : 0 };
+  }).sort((a, b) => b.year - a.year || a.index - b.index).map(item => item.meta);
+  const libraryMetas = entries => (entries || []).map(entry => {
+    const item = entry && (entry.item || entry), meta = item && (item.meta || item);
+    if (!meta) return null;
+    const id = meta.id || meta.imdb_id || item.id || item.imdb_id || entry.imdb_id;
+    if (!id) return null;
+    return {
+      id,
+      type: meta.type || item.type || entry.type || 'movie',
+      name: meta.name || item.name || entry.name || String(id),
+      poster: meta.poster || item.poster || '',
+      background: meta.background || item.background || ''
+    };
+  }).filter(Boolean);
   const api = {
     async createLink() { const value = await get(LINK + 'create?type=Create'); return { code: value.code, url: value.link }; },
     async readLink(code) { try { return (await get(LINK + 'read?type=Read&code=' + encodeURIComponent(code))).authKey || null; } catch (error) { if (/101/.test(error.message)) return null; throw error; } },
@@ -117,7 +135,7 @@
       for (const addon of addons.filter(addon => supports(addon, 'meta', type, id))) try { const meta = (await get(addonUrl(addon, 'meta', type, id))).meta; if (meta) return meta; } catch (_) { /* try next add-on */ }
       try { return (await get(`${CINEMETA}meta/${part(type)}/${part(id)}.json`)).meta || null; } catch (_) { return null; }
     },
-    supports, rankStreams, details, audioLanguages, audioLanguageCode, subtitleLanguage, filterSubtitles, orderEpisodes, isHttpUrl, normalizeUrl,
+    supports, rankStreams, details, audioLanguages, audioLanguageCode, subtitleLanguage, filterSubtitles, orderEpisodes, sortRecent, libraryMetas, isHttpUrl, normalizeUrl,
     image(value, kind) { if (!value) return ''; const source = String(value).trim(); if (source.startsWith('http')) return normalizeUrl(source); return `https://images.metahub.space/${kind || 'poster'}/large/${part(source.split(':')[0])}/img`; }
   };
   if (typeof module !== 'undefined') module.exports = api;
