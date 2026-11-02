@@ -541,11 +541,12 @@
     if (event.keyCode === 461 && auth) { home(); return; }
     const directions = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
     const direction = directions[event.key] || ({ 37: 'left', 38: 'up', 39: 'right', 40: 'down' })[event.keyCode];
-    if (!direction || !app.contains(document.activeElement)) return;
+    if (!direction || (!app.contains(document.activeElement) && !nav.contains(document.activeElement))) return;
     if (document.activeElement.matches('select,textarea,input:not([type="checkbox"]),video')) return;
     const current = document.activeElement.getBoundingClientRect();
     const currentX = current.left + current.width / 2, currentY = current.top + current.height / 2;
-    const candidates = $$('button:not([disabled]),input[type="checkbox"]:not([disabled]),select:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])', app)
+    const selector = 'button:not([disabled]),input[type="checkbox"]:not([disabled]),select:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])';
+    const candidates = $$(selector, app).concat($$(selector, nav))
       .filter(element => element !== document.activeElement && element.getClientRects().length)
       .map(element => ({ element, rect: element.getBoundingClientRect() }))
       .map(item => {

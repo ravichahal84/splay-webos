@@ -13,7 +13,7 @@ An early, experimental webOS client for Stremio. It links a Stremio account with
 node tests/api.test.js
 node --check app/api.js && node --check app/app.js
 ares-package -o dist app
-ares-install --device <tv-name> dist/org.community.alder.webos_0.2.8_all.ipk
+ares-install --device <tv-name> dist/org.community.alder.webos_0.2.9_all.ipk
 ares-launch --device <tv-name> org.community.alder.webos
 ```
 
@@ -21,7 +21,7 @@ ares-launch --device <tv-name> org.community.alder.webos
 
 ## Homebrew distribution
 
-The repository is public. Add the `homebrew-repository.json` URL to Homebrew Channel to use this custom catalogue. The catalogue and its package manifest are hosted in the repository; release IPKs are attached to GitHub Releases. Version 0.2.8 is an experimental preview; playback and add-on compatibility have not yet been verified on the target TVs. Series playback offers a 10-second next-episode countdown, and subtitle tracks are loaded from installed Stremio subtitle add-ons (WebVTT and SRT), with saved language filters. Subtitle availability and rendering depend on the add-on, stream, and TV. The Add-on health view reports recent catalogue, stream, and subtitle requests. Do not enter a Stremio password on the TV; account linking uses Stremio's one-time code flow.
+The repository is public. Add the `homebrew-repository.json` URL to Homebrew Channel to use this custom catalogue. The catalogue and its package manifest are hosted in the repository; release IPKs are attached to GitHub Releases. Version 0.2.9 is an experimental preview; playback and add-on compatibility have not yet been verified on the target TVs. Series playback offers a 10-second next-episode countdown, and subtitle tracks are loaded from installed Stremio subtitle add-ons (WebVTT and SRT), with saved language filters. Subtitle availability and rendering depend on the add-on, stream, and TV. The Add-on health view reports recent catalogue, stream, and subtitle requests. Do not enter a Stremio password on the TV; account linking uses Stremio's one-time code flow.
 
 ## Publishing a Homebrew release
 

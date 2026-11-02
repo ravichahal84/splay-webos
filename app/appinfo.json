@@ -1,6 +1,6 @@
 {
   "id": "org.community.alder.webos",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "vendor": "Splay",
   "type": "web",
   "main": "index.html",
