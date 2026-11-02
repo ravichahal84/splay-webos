@@ -7,6 +7,7 @@ assert.equal(typeof api.streams, 'function');
 assert.equal(typeof api.subtitles, 'function');
 assert.equal(typeof api.filterSubtitles, 'function');
 assert.equal(typeof api.orderEpisodes, 'function');
+assert.equal(typeof api.audioLanguages, 'function');
 assert.equal(typeof api.rankStreams, 'function');
 assert.equal(api.isHttpUrl('javascript:alert(1)'), false);
 assert.equal(api.isHttpUrl('https://example.test/video.mp4'), true);
@@ -17,6 +18,31 @@ const ranked = api.rankStreams([
 ], { maxHeight: 1080, allowHdr: true });
 assert.equal(ranked.length, 1);
 assert.equal(ranked[0].splay.height, 1080);
+
+function testAudioLanguagePreferences() {
+  const streams = [
+    { url: 'https://example.test/english.mkv', name: 'Movie 1080p English' },
+    { url: 'https://example.test/hindi.mkv', title: 'Hindi 720p' },
+    { url: 'https://example.test/punjabi.mkv', description: 'Panjabi audio' },
+    { url: 'https://example.test/french.mkv', name: 'French 4K' },
+    { url: 'https://example.test/unknown.mkv', name: 'Movie 4K' }
+  ];
+  assert.deepEqual(api.audioLanguages(streams[0]), ['eng']);
+  assert.deepEqual(api.audioLanguages(streams[1]), ['hin']);
+  assert.deepEqual(api.audioLanguages(streams[2]), ['pan']);
+  assert.deepEqual(api.audioLanguages({ audio: [{ language: 'Hindi' }] }), ['hin']);
+  assert.deepEqual(api.audioLanguages({ name: 'Penguin movie' }), []);
+  assert.deepEqual(api.audioLanguages({ name: 'French 4K' }), ['fra']);
+  const preferred = api.rankStreams(streams, { preferredAudioLanguages: ['eng', 'hin', 'pan'] });
+  assert.deepEqual(preferred.map(stream => stream.url), [
+    'https://example.test/english.mkv',
+    'https://example.test/hindi.mkv',
+    'https://example.test/punjabi.mkv',
+    'https://example.test/unknown.mkv'
+  ]);
+  assert(!preferred.some(stream => stream.url.includes('french')));
+  assert.equal(api.rankStreams(streams, { preferredAudioLanguages: ['hin'] })[0].url, 'https://example.test/hindi.mkv');
+}
 
 async function testCatalogSearchPath() {
   const originalFetch = global.fetch;
@@ -86,6 +112,7 @@ function testEpisodeOrdering() {
 }
 
 Promise.all([testCatalogSearchPath(), testSubtitleLookup()]).then(() => {
+  testAudioLanguagePreferences();
   testSubtitleLanguageFilter();
   testEpisodeOrdering();
   console.log('API tests passed');

@@ -231,7 +231,8 @@
   }
   function $$(selector, root = document) { return [...root.querySelectorAll(selector)]; }
   function streamLabel(stream) {
-    const info = stream.splay || SplayApi.details(stream), format = [info.height && info.height + 'p', info.hdr && 'HDR', info.hevc && 'HEVC', info.audio && 'surround audio'].filter(Boolean).join(' · ');
+    const info = stream.splay || SplayApi.details(stream), audioLanguages = { eng: 'English audio', hin: 'Hindi audio', pan: 'Punjabi audio' };
+    const format = [info.height && info.height + 'p', info.hdr && 'HDR', info.hevc && 'HEVC', info.audio && 'surround audio', ...(info.audioLanguages || []).map(language => audioLanguages[language])].filter(Boolean).join(' · ');
     return [format, stream.name || stream.title || stream.filename || 'Direct stream'].filter(Boolean).join(' — ');
   }
   const asEpisode = (video, series) => Object.assign({}, video, {
@@ -422,7 +423,14 @@
       const answers = await Promise.all(directAddons(typeFor(video), video.id).map(async addon => (await trackedAddonRequest(addon, 'stream', video.name || video.id,
         () => SplayApi.streams(addon, typeFor(video), video.id)).catch(() => [])).map(stream => Object.assign(stream, { provider: addon.manifest.name }))));
       const ordered = SplayApi.rankStreams(answers.flat(), prefs());
-      if (!ordered.length) throw Error('No direct, TV-compatible stream was returned. Check your debrid add-on and source settings in Stremio.');
+      if (!ordered.length) {
+        const preferredLanguages = prefs().preferredAudioLanguages || [];
+        const withoutLanguageFilter = SplayApi.rankStreams(answers.flat(), Object.assign({}, prefs(), { preferredAudioLanguages: [] }));
+        if (preferredLanguages.length && withoutLanguageFilter.length) {
+          throw Error('No sources matched your preferred audio languages. Change the audio language preferences in Settings or check another add-on.');
+        }
+        throw Error('No direct, TV-compatible stream was returned. Check your debrid add-on and source settings in Stremio.');
+      }
       if (autoPlay && (forceAutoPlay || prefs().autoPlay)) return playQueue(ordered, 0);
       const box = $('#streams'); box.innerHTML = '<p>Direct sources are ranked for this TV. “Best match” follows your Settings.</p>';
       ordered.forEach((stream, index) => { const button = document.createElement('button'); button.className = 'stream'; button.innerHTML = `${index === 0 ? '<b>BEST MATCH</b> ' : ''}${e(streamLabel(stream))}<small>${e(stream.provider || '')}</small>`; button.onclick = () => playQueue(ordered, index); box.append(button); });
@@ -531,9 +539,11 @@
   }
   function settings() {
     const value = prefs();
-    show(`<h1>Playback settings</h1><section class="settings"><label>Highest quality <select id="height"><option value="2160">4K</option><option value="1080">1080p</option><option value="720">720p</option><option value="0">No limit</option></select></label><label><input id="hdr" type="checkbox"> Allow HDR / Dolby Vision</label><label><input id="prefer-hdr" type="checkbox"> Prefer HDR</label><label><input id="prefer-hevc" type="checkbox"> Prefer HEVC</label><label><input id="auto" type="checkbox"> Play best source automatically</label><button id="save">Save playback settings</button><button id="refresh" class="quiet">Refresh add-ons</button><button id="out" class="quiet">Sign out</button></section>`);
+    const selectedAudioLanguages = Array.isArray(value.preferredAudioLanguages) ? value.preferredAudioLanguages : [];
+    show(`<h1>Playback settings</h1><section class="settings"><label>Highest quality <select id="height"><option value="2160">4K</option><option value="1080">1080p</option><option value="720">720p</option><option value="0">No limit</option></select></label><label><input id="hdr" type="checkbox"> Allow HDR / Dolby Vision</label><label><input id="prefer-hdr" type="checkbox"> Prefer HDR</label><label><input id="prefer-hevc" type="checkbox"> Prefer HEVC</label><label><input id="auto" type="checkbox"> Play best source automatically</label><fieldset class="audio-language-preferences"><legend>Preferred audio languages</legend><label><input class="audio-language" type="checkbox" value="eng"> English</label><label><input class="audio-language" type="checkbox" value="hin"> Hindi</label><label><input class="audio-language" type="checkbox" value="pan"> Punjabi</label><p>Sources labelled with your selected languages are preferred; labelled sources in other languages are skipped. Sources without language details remain available. Track switching within a video depends on the stream and TV.</p></fieldset><button id="save">Save playback settings</button><button id="refresh" class="quiet">Refresh add-ons</button><button id="out" class="quiet">Sign out</button></section>`);
     $('#height').value = String(value.maxHeight); $('#hdr').checked = value.allowHdr; $('#prefer-hdr').checked = value.preferHdr; $('#prefer-hevc').checked = value.preferHevc; $('#auto').checked = value.autoPlay;
-    $('#save').onclick = () => { savePrefs({ maxHeight: Number($('#height').value), allowHdr: $('#hdr').checked, preferHdr: $('#prefer-hdr').checked, preferHevc: $('#prefer-hevc').checked, autoPlay: $('#auto').checked }); $('#status').textContent = 'Saved'; setTimeout(() => $('#status').textContent = '', 1500); };
+    $$('.audio-language').forEach(input => { input.checked = selectedAudioLanguages.includes(input.value); });
+    $('#save').onclick = () => { savePrefs({ maxHeight: Number($('#height').value), allowHdr: $('#hdr').checked, preferHdr: $('#prefer-hdr').checked, preferHevc: $('#prefer-hevc').checked, autoPlay: $('#auto').checked, preferredAudioLanguages: $$('.audio-language').filter(input => input.checked).map(input => input.value) }); $('#status').textContent = 'Saved'; setTimeout(() => $('#status').textContent = '', 1500); };
     $('#refresh').onclick = () => safe(async () => { await load(); addonView(); }); $('#out').onclick = () => { localStorage.removeItem('splay.authKey'); auth = null; addons = []; nav.classList.add('hidden'); link(); };
   }
   nav.onclick = event => { const view = event.target.dataset.v; if (view) ({ home, search, favorites: favoriteView, addons: addonView, health: healthView, settings }[view])(); };

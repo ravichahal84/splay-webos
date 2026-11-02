@@ -24,18 +24,65 @@
     const rule = typeof entry === 'string' ? addon.manifest : entry, types = rule.types || addon.manifest.types || [], prefixes = rule.idPrefixes || addon.manifest.idPrefixes || [];
     return (!types.length || types.includes(type)) && (!prefixes.length || prefixes.some(prefix => id.startsWith(prefix)));
   }
-  const streamText = stream => [stream.name, stream.title, stream.description, stream.filename].filter(Boolean).join(' ').toLowerCase();
+  const streamText = stream => {
+    const hints = stream.behaviorHints || {};
+    const audio = Array.isArray(stream.audio)
+      ? stream.audio.map(track => track && (track.language || track.lang || track.name)).filter(value => typeof value === 'string').join(' ')
+      : typeof stream.audio === 'string' ? stream.audio : '';
+    const audioLanguages = Array.isArray(stream.audioLanguages) ? stream.audioLanguages.join(' ') : '';
+    return [stream.name, stream.title, stream.description, stream.filename, hints.filename, stream.audioLanguage, stream.audioLang, stream.lang, stream.language, audio, audioLanguages]
+      .filter(value => typeof value === 'string' && value).join(' ').toLowerCase();
+  };
   const fromText = (value, regex) => { const match = String(value || '').match(regex); return match ? Number(match[1]) : 0; };
+  const audioLanguagePatterns = [
+    ['eng', /(?:^|[^a-z])(?:english|eng|en)(?=$|[^a-z])/i],
+    ['hin', /(?:^|[^a-z])(?:hindi|hin)(?=$|[^a-z])/i],
+    ['pan', /(?:^|[^a-z])(?:punjabi|panjabi|pan|pun)(?=$|[^a-z])/i],
+    ['spa', /(?:^|[^a-z])(?:spanish|spa|es)(?=$|[^a-z])/i],
+    ['fra', /(?:^|[^a-z])(?:french|fra|fre|fr)(?=$|[^a-z])/i],
+    ['deu', /(?:^|[^a-z])(?:german|deu|ger|de)(?=$|[^a-z])/i],
+    ['ita', /(?:^|[^a-z])(?:italian|ita|it)(?=$|[^a-z])/i],
+    ['por', /(?:^|[^a-z])(?:portuguese|por|pt)(?=$|[^a-z])/i],
+    ['rus', /(?:^|[^a-z])(?:russian|rus|ru)(?=$|[^a-z])/i],
+    ['jpn', /(?:^|[^a-z])(?:japanese|jpn|ja)(?=$|[^a-z])/i],
+    ['kor', /(?:^|[^a-z])(?:korean|kor|ko)(?=$|[^a-z])/i],
+    ['zho', /(?:^|[^a-z])(?:chinese|zho|chi|zh)(?=$|[^a-z])/i],
+    ['ara', /(?:^|[^a-z])(?:arabic|ara|ar)(?=$|[^a-z])/i],
+    ['tur', /(?:^|[^a-z])(?:turkish|tur|tr)(?=$|[^a-z])/i],
+    ['tam', /(?:^|[^a-z])(?:tamil|tam)(?=$|[^a-z])/i],
+    ['tel', /(?:^|[^a-z])(?:telugu|tel)(?=$|[^a-z])/i],
+    ['mar', /(?:^|[^a-z])(?:marathi|mar)(?=$|[^a-z])/i],
+    ['ben', /(?:^|[^a-z])(?:bengali|ben)(?=$|[^a-z])/i],
+    ['urd', /(?:^|[^a-z])(?:urdu|urd)(?=$|[^a-z])/i],
+    ['vie', /(?:^|[^a-z])(?:vietnamese|vie|vi)(?=$|[^a-z])/i],
+    ['tha', /(?:^|[^a-z])(?:thai|tha)(?=$|[^a-z])/i],
+    ['ind', /(?:^|[^a-z])(?:indonesian|ind|id)(?=$|[^a-z])/i],
+    ['nld', /(?:^|[^a-z])(?:dutch|nld|dut|nl)(?=$|[^a-z])/i],
+    ['pol', /(?:^|[^a-z])(?:polish|pol|pl)(?=$|[^a-z])/i],
+    ['swe', /(?:^|[^a-z])(?:swedish|swe|sv)(?=$|[^a-z])/i],
+    ['nor', /(?:^|[^a-z])(?:norwegian|nor|no)(?=$|[^a-z])/i],
+    ['dan', /(?:^|[^a-z])(?:danish|dan|da)(?=$|[^a-z])/i],
+    ['fin', /(?:^|[^a-z])(?:finnish|fin|fi)(?=$|[^a-z])/i],
+    ['ell', /(?:^|[^a-z])(?:greek|ell|gre|el)(?=$|[^a-z])/i],
+    ['heb', /(?:^|[^a-z])(?:hebrew|heb|he)(?=$|[^a-z])/i],
+    ['ukr', /(?:^|[^a-z])(?:ukrainian|ukr|uk)(?=$|[^a-z])/i]
+  ];
+  const audioLanguages = stream => {
+    const text = streamText(stream);
+    return audioLanguagePatterns.filter(([, pattern]) => pattern.test(text)).map(([language]) => language);
+  };
   function details(stream) {
     const label = streamText(stream), height = stream.height || fromText(label, /(?:^|\D)(2160|1080|720|576|480)p(?:\D|$)/i), size = stream.size || stream.videoSize || fromText(label, /(?:^|\s)([\d.]+)\s*(?:gb|gib)/i) * 1073741824 || fromText(label, /(?:^|\s)([\d.]+)\s*(?:mb|mib)/i) * 1048576;
-    return { height, size, hdr: /\b(?:hdr10\+?|dolby vision|\bdv\b|hlg)\b/i.test(label), hevc: /\b(?:hevc|h\.?(?:265)|x265)\b/i.test(label), awkward: /\b(?:cam|telesync|\bts\b|screener|3d|hardcoded|hc\b)\b/i.test(label), audio: /\b(?:atmos|truehd|dts(?:-hd)?|5\.1|7\.1)\b/i.test(label) };
+    return { height, size, hdr: /\b(?:hdr10\+?|dolby vision|\bdv\b|hlg)\b/i.test(label), hevc: /\b(?:hevc|h\.?(?:265)|x265)\b/i.test(label), awkward: /\b(?:cam|telesync|\bts\b|screener|3d|hardcoded|hc\b)\b/i.test(label), audio: /\b(?:atmos|truehd|dts(?:-hd)?|5\.1|7\.1)\b/i.test(label), audioLanguages: audioLanguages(stream) };
   }
   function rankStreams(streams, preferences) {
-    const prefs = Object.assign({ maxHeight: 2160, allowHdr: true, preferHdr: false, preferHevc: false }, preferences || {});
+    const prefs = Object.assign({ maxHeight: 2160, allowHdr: true, preferHdr: false, preferHevc: false, preferredAudioLanguages: [] }, preferences || {});
+    const preferredAudioLanguages = Array.isArray(prefs.preferredAudioLanguages) ? prefs.preferredAudioLanguages : [];
     return streams.filter(stream => stream && isHttpUrl(stream.url) && !stream.infoHash).map((stream, index) => ({ stream, index, info: details(stream) }))
-      .filter(item => !item.info.awkward && (!prefs.maxHeight || !item.info.height || item.info.height <= prefs.maxHeight) && (prefs.allowHdr || !item.info.hdr))
+      .filter(item => !item.info.awkward && (!prefs.maxHeight || !item.info.height || item.info.height <= prefs.maxHeight) && (prefs.allowHdr || !item.info.hdr)
+        && (!preferredAudioLanguages.length || !item.info.audioLanguages.length || item.info.audioLanguages.some(language => preferredAudioLanguages.includes(language))))
       .sort((a, b) => {
-        const score = item => (item.info.height || 0) / 100 + (prefs.preferHdr && item.info.hdr ? 8 : 0) + (prefs.preferHevc && item.info.hevc ? 3 : 0) + (item.info.audio ? 1 : 0) - (item.info.size ? item.info.size / 1073741824 / 100 : 0);
+        const score = item => (preferredAudioLanguages.length && item.info.audioLanguages.length ? 25 : 0) + (item.info.height || 0) / 100 + (prefs.preferHdr && item.info.hdr ? 8 : 0) + (prefs.preferHevc && item.info.hevc ? 3 : 0) + (item.info.audio ? 1 : 0) - (item.info.size ? item.info.size / 1073741824 / 100 : 0);
         return score(b) - score(a) || a.index - b.index;
       }).map(item => Object.assign({}, item.stream, { splay: item.info }));
   }
@@ -59,7 +106,7 @@
       for (const addon of addons.filter(addon => supports(addon, 'meta', type, id))) try { const meta = (await get(addonUrl(addon, 'meta', type, id))).meta; if (meta) return meta; } catch (_) { /* try next add-on */ }
       try { return (await get(`${CINEMETA}meta/${part(type)}/${part(id)}.json`)).meta || null; } catch (_) { return null; }
     },
-    supports, rankStreams, details, subtitleLanguage, filterSubtitles, orderEpisodes, isHttpUrl, normalizeUrl,
+    supports, rankStreams, details, audioLanguages, subtitleLanguage, filterSubtitles, orderEpisodes, isHttpUrl, normalizeUrl,
     image(value, kind) { if (!value) return ''; const source = String(value).trim(); if (source.startsWith('http')) return normalizeUrl(source); return `https://images.metahub.space/${kind || 'poster'}/large/${part(source.split(':')[0])}/img`; }
   };
   if (typeof module !== 'undefined') module.exports = api;
