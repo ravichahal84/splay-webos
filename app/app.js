@@ -78,7 +78,7 @@
   const savePrefs = value => localStorage.setItem('splay.preferences', JSON.stringify(value));
   const e = value => String(value || '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   const image = (meta, kind) => SplayApi.normalizeUrl(SplayApi.image(meta[kind] || (kind === 'poster' ? meta.poster || meta.imdb_id : meta.imdb_id), kind));
-  const show = html => { clearNextEpisodeCountdown(); app.innerHTML = html; setTimeout(() => ($('button,input,select', app) || app).focus()); };
+  const show = html => { clearNextEpisodeCountdown(); app.innerHTML = html; setTimeout(() => { const first = $('.card,button,input,select', app) || $('button', nav); if (first) first.focus(); }, 50); };
   const safe = async work => { try { $('#status').textContent = 'Loading…'; await work(); } catch (error) { app.insertAdjacentHTML('afterbegin', `<p class="error">${e(error.message)}</p>`); } finally { $('#status').textContent = ''; } };
   const typeFor = item => item.type === 'series' ? 'series' : 'movie';
   const directAddons = (type, id) => addons.filter(addon => SplayApi.supports(addon, 'stream', type, id));
@@ -771,7 +771,12 @@
     }
     const directions = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
     const direction = directions[event.key] || ({ 37: 'left', 38: 'up', 39: 'right', 40: 'down' })[event.keyCode];
-    if (!direction || (!app.contains(document.activeElement) && !nav.contains(document.activeElement))) return;
+    if (!direction) return;
+    if (!app.contains(document.activeElement) && !nav.contains(document.activeElement)) {
+      const first = $('button:not([disabled]),input,select', app) || $('button', nav);
+      if (first) { first.focus(); event.preventDefault(); }
+      return;
+    }
     if (document.activeElement.matches('select,textarea,input:not([type="checkbox"]),video')) return;
     const current = document.activeElement.getBoundingClientRect();
     const currentX = current.left + current.width / 2, currentY = current.top + current.height / 2;
