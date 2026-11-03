@@ -243,7 +243,7 @@
   }
   function renderDetails(playImmediately, episodeId, restoreEpisodeFocus) {
     const meta = selected, backdrop = image(meta, 'background'), poster = image(meta, 'poster');
-    show(`<section class="detail" style="--backdrop:url('${e(backdrop)}')"><img src="${e(poster)}" alt=""><div><button class="back">← Back</button> <button class="quiet" id="favorite">${isFavorite(meta) ? 'Remove from favorites' : 'Add to favorites'}</button>${meta.logo ? `<img class="detail-logo" src="${e(meta.logo)}" alt="${e(meta.name)}">` : ''}<h1>${e(meta.name)}</h1><p>${e([meta.year, (meta.genres || []).join(', '), meta.imdbRating && 'IMDb ' + meta.imdbRating].filter(Boolean).join(' · '))}</p><p>${e(meta.description || 'No description provided.')}</p><div id="episodes"></div><button id="best">Play best source</button> <button class="quiet" id="sources">Choose source</button></div></section>`);
+    show(`<section class="detail" style="--backdrop:url('${e(backdrop)}')"><img src="${e(poster)}" alt=""><div><button class="back">← Back</button> <button class="quiet" id="favorite">${isFavorite(meta) ? 'Remove from favorites' : 'Add to favorites'}</button>${meta.logo ? `<img class="detail-logo" src="${e(meta.logo)}" alt="${e(meta.name)}">` : ''}<div class="detail-actions"><button id="best">Play best source</button> <button class="quiet" id="sources">Choose source</button></div><h1>${e(meta.name)}</h1><p>${e([meta.year, (meta.genres || []).join(', '), meta.imdbRating && 'IMDb ' + meta.imdbRating].filter(Boolean).join(' · '))}</p><p>${e(meta.description || 'No description provided.')}</p><div id="episodes"></div></div></section>`);
     $('.back').onclick = browseView;
     $('#favorite').onclick = () => {
       toggleFavorite(meta);
@@ -597,21 +597,16 @@
     }
     const stream = queue[index], label = streamLabel(stream);
     addToHistory(selectedVideo, selected);
-    show(`<button class="back">← Back</button><h1>${e(selectedVideo.name || selected.name)}</h1><p id="playing">Starting ${e(label)}…</p><video id="player" controls autoplay src="${e(stream.url)}">This stream is not supported by the TV.</video><section class="playback-progress"><progress id="playback-progress" max="1" value="0" aria-label="Playback progress"></progress><span id="playback-progress-text">0:00 / --:--</span></section><details class="player-options" open><summary>Audio, subtitles & episode controls</summary><section class="subtitle-controls audio-controls"><h2>Audio language</h2><p id="audio-track-status">Checking audio tracks…</p><select id="audio-track-select" aria-label="Audio language"></select></section><section class="subtitle-controls"><h2>Subtitles</h2><p id="subtitle-status">Looking for subtitles…</p><div id="subtitle-options" class="subtitle-options"></div></section><div id="player-actions"></div></details>`);
+    show(`<button class="back">← Back</button><h1>${e(selectedVideo.name || selected.name)}</h1><p id="playing">Starting ${e(label)}…</p><div class="player-layout"><div class="player-main"><video id="player" controls autoplay src="${e(stream.url)}">This stream is not supported by the TV.</video></div><details class="player-options" open><summary>Audio, subtitles & episode controls</summary><section class="subtitle-controls audio-controls"><h2>Audio language</h2><p id="audio-track-status">Checking audio tracks…</p><select id="audio-track-select" aria-label="Audio language"></select></section><section class="subtitle-controls"><h2>Subtitles</h2><p id="subtitle-status">Looking for subtitles…</p><div id="subtitle-options" class="subtitle-options"></div></section><div id="player-actions"></div></details></div>`);
     $('.back').onclick = () => streams(selectedVideo, false);
     const player = $('#player');
     let lastSaved = 0;
     setupAudioTrackSelector(player);
-    const progress = $('#playback-progress'), progressText = $('#playback-progress-text');
     player.onloadedmetadata = () => {
-      if (Number.isFinite(player.duration) && player.duration > 0) progress.max = player.duration;
       if (startAt > 0 && startAt < player.duration - 15) player.currentTime = startAt;
     };
     player.ontimeupdate = () => {
       if (Number.isFinite(player.duration) && player.duration > 0) {
-        progress.max = player.duration;
-        progress.value = player.currentTime;
-        progressText.textContent = `${formatTime(player.currentTime)} / ${formatTime(player.duration)}`;
       }
       if (player.currentTime - lastSaved >= 10) { lastSaved = player.currentTime; saveProgress(id, player.currentTime); }
     };
@@ -772,6 +767,12 @@
     const directions = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
     const direction = directions[event.key] || ({ 37: 'left', 38: 'up', 39: 'right', 40: 'down' })[event.keyCode];
     if (!direction) return;
+    if (document.activeElement && document.activeElement.id === 'player' && (direction === 'left' || direction === 'right')) {
+      const v = document.activeElement;
+      if (Number.isFinite(v.duration)) v.currentTime = Math.max(0, Math.min(v.duration, v.currentTime + (direction === 'left' ? -10 : 10)));
+      event.preventDefault();
+      return;
+    }
     if (!app.contains(document.activeElement) && !nav.contains(document.activeElement)) {
       const first = $('button:not([disabled]),input,select', app) || $('button', nav);
       if (first) { first.focus(); event.preventDefault(); }
